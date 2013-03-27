@@ -1,0 +1,63 @@
+
+title nano tb 26nm in cf1 long run 
+sampletitle nano tb
+samplename mtth 90 Ge 113 2.41A
+user studer
+email ajs@ansto.gov.au
+proc RadCollRampCF1 {start step numsteps oscno} {
+	tc1_asyncq send SETP 1,$start
+	tc2_asyncq send SETP 1,$start
+	histmem mode unlimited
+	newfile HISTOGRAM_XY
+	for {set i 0} {$i < $numsteps} {incr i} {
+		set j [expr $i*$step+$start]
+		tc1_asyncq send SETP 1,$j
+		tc2_asyncq send SETP 1,$j
+		oscmd start $oscno
+		hmm countblock
+		save $i
+
+	}
+oscmd stop
+}
+
+SetRadColl 60 2
+tc1 controlsensor sensorA
+tc2 controlsensor sensorA
+tc1 range 5
+tc2 range 5
+
+
+
+
+tc1_asyncq send SETP 1,10
+tc2_asyncq send SETP 1,10
+
+tc1_asyncq send RAMP 1,1,1.2
+wait 3
+tc2_asyncq send RAMP 1,1,1.2
+wait 3
+
+#so this time it's 10K to 220K
+sampletitle ramp 10 to 220K
+RadCollRampCF1 10 1 210 1
+
+#so this time it's 220K to 240K
+sampletitle ramp 10 to 220K
+RadCollRampCF1 220 1 20 25
+
+#so this time it's 240K to 300K
+sampletitle ramp 240 to 300K
+RadCollRampCF1 240 1 60 1
+
+
+
+
+
+
+#turn ramp off
+tc1_asyncq send RAMP 1,0,1.0
+tc2_asyncq send RAMP 1,0,1.0
+wait 3
+drive tc1 300 tc2 300
+tc1_asyncq send RELAY 2,2,1

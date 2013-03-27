@@ -1,0 +1,15 @@
+
+
+proc scanrad  {start end numsteps} {
+	
+	for {set i 0} {$i < $numsteps} {incr i} {
+		drive oct $start
+#		broadcast $oct
+		drive oct $end
+#		broadcast $oct
+		
+	}
+
+}
+
+scanrad -1 1 200

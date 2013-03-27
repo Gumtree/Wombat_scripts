@@ -1,0 +1,30 @@
+# Required argument: %1-Device1, %2-Device2, %3-large range, %4tiny range, %5-large step, %6-tiny step, %7 scan time in sec
+# Print the model details
+model
+
+# Do a time scan on device1 from negative distance to positive distance with a step of 5mm for 1000 seconds
+scan %1 -%3 %3 %5 time %7
+
+# Do a time scan on device2 from negative distance to positive distance with a step of 5mm for 1000 seconds 
+scan %2 -%3 %3 %5 time %7
+
+# Move device1 to the extremum find in the above scans
+moveto %1 peak noauto
+
+# Move device2 to the extremum find in the above scans
+moveto %2 peak noauto
+
+# Do a time scan on device1 some distance around its current location with a step of 5mm for 1000 seconds
+scan %1 * %4 %6 time %7
+
+# Do a time scan on device2 some distance around its current location with a step of 5mm for 1000 seconds
+scan %2 * %4 %6 time %7
+
+# Move device1 to the extremum find in the latest scan for bsx
+moveto %1 peak auto
+
+# Move device2 to the extremum find in the latest scan for bsz
+moveto %2 peak auto
+
+# Print the model details again
+model

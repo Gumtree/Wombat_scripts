@@ -1,0 +1,71 @@
+<workflow>
+  <task classname="au.gov.ansto.bragg.wombat.exp.task.HeaderInformationBlockTask">
+    <parameters/>
+    <dataModel class="org.gumtree.gumnix.sics.batch.ui.model.SicsCommandBlock">
+      <commands>
+        <org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+          <sicsVariable>title</sicsVariable>
+          <value>PrCa2Mn2O7 ac plane test run during cooldown</value>
+          <isQuoted>true</isQuoted>
+        </org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+          <sicsVariable>sampledescription</sicsVariable>
+          <value>single xtal ac plane</value>
+          <isQuoted>true</isQuoted>
+        </org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+          <sicsVariable>sampletitle</sicsVariable>
+          <value>PrCa2Mn2O7 ac plane</value>
+          <isQuoted>true</isQuoted>
+        </org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+          <sicsVariable>samplename</sicsVariable>
+          <value>PrCa2Mn2O7 ac plane</value>
+          <isQuoted>true</isQuoted>
+        </org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+          <sicsVariable>user</sicsVariable>
+          <value>Guochu Deng </value>
+          <isQuoted>true</isQuoted>
+        </org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+          <sicsVariable>email</sicsVariable>
+          <value>guochu@ansto.gov.au</value>
+          <isQuoted>false</isQuoted>
+        </org.gumtree.gumnix.sics.batch.ui.commands.SicsVariableCommand>
+      </commands>
+    </dataModel>
+  </task>
+  <task classname="org.gumtree.gumnix.sics.batch.ui.CommandBlockTask">
+    <parameters>
+      <label>SICS Commands</label>
+    </parameters>
+    <dataModel class="org.gumtree.gumnix.sics.batch.ui.model.SicsCommandBlock">
+      <commands>
+        <org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+          <text>Simplescan som -60 0.2 200 5</text>
+        </org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+          <text>Simplescan som -20 0.2 200 5</text>
+        </org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+          <text>Simplescan som 20 0.2 200 5</text>
+        </org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+        <org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+          <text></text>
+        </org.gumtree.gumnix.sics.batch.ui.commands.LineScriptCommand>
+      </commands>
+    </dataModel>
+  </task>
+  <context>
+    <org.gumtree.gumnix.sics.batch.ui.model.SicsBatchScript>
+      <org.gumtree.gumnix.sics.batch.ui.model.SicsBatchScript>
+        <blocks>
+          <org.gumtree.gumnix.sics.batch.ui.model.SicsCommandBlock reference="../../../../../task/dataModel"/>
+          <org.gumtree.gumnix.sics.batch.ui.model.SicsCommandBlock reference="../../../../../task[2]/dataModel"/>
+        </blocks>
+      </org.gumtree.gumnix.sics.batch.ui.model.SicsBatchScript>
+    </org.gumtree.gumnix.sics.batch.ui.model.SicsBatchScript>
+  </context>
+  <parameters/>
+</workflow>
