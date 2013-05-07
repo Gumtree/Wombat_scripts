@@ -20,9 +20,9 @@ import traceback
 sics.ready = False
 __script__.title = 'Initialised'
 __script__.version = ''
-__data_folder__ = 'W:/data/current'
+__data_folder__ = 'W:/'
 #__data_folder__ = 'Z:/testing/pelican'
-__export_folder__ = 'W:/data/current/reports'
+__export_folder__ = 'W:/reports'
 __buffer_log_file__ = __export_folder__
 Dataset.__dicpath__ = get_absolute_path('/Internal/path_table')
 System.setProperty('sics.data.path', __data_folder__)
@@ -31,19 +31,6 @@ try:
     __dispose_all__(None)
 except:
     pass
-
-def get_prof_value(name):
-    value = __UI__.getPreference(name)
-    if value == None:
-        value = ''
-    else:
-        value = str(value)
-    return value
-
-def set_prof_value(name, value):
-    if value == None:
-        value = ''
-    __UI__.setPreference(name, value)
 
 fi = File(__buffer_log_file__)
 if not fi.exists():
