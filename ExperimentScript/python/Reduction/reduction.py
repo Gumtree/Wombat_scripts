@@ -80,7 +80,8 @@ def applyNormalization(ds, reference, target=-1):
        all adjusted by this amount.  Reference is a string referring to a particular location in the dataset, and
        target is the target value to which they will be adjusted.  If target is not specified, the maximum value of
        the reference array is used and reported for further use. The variance of the values in the reference array
-       is assumed to follow counting statistics."""
+       is assumed to follow counting statistics.  We modify the input dataset rather than creating a new dataset
+       as files on Wombat are so large."""
     print 'normalization of', ds.title
     # Store reference name for later
     refname = str(reference)
@@ -118,15 +119,12 @@ def applyNormalization(ds, reference, target=-1):
             pass
        
     # normalization
-    rs = ds.__copy__()
-    copy_metadata_deep(rs,ds)  #NeXuS metadata
-    rs.copy_cif_metadata(ds)   #CIF metadata
     if numericReference and target > 0:
         # We have a single number to refer to for normalisation, so
         # we are effectively scaling everything by a single number
         scale_factor = float(target)/reference
         variance = scale_factor * target/(reference*reference)
-        do_norm(rs, scale_factor, variance)
+        do_norm(ds, scale_factor, variance)
         info_string = "Data multiplied by %f with variance %f" % (scale_factor,variance)
     elif not numericReference:
         # Each step has a different value, and we manually perform the
@@ -134,18 +132,18 @@ def applyNormalization(ds, reference, target=-1):
         reference = Data(reference)
         if target <= 0:
             target = reference.max()
-        for i in xrange(rs.shape[0]):
+        for i in xrange(ds.shape[0]):
             f = float(target)/reference[i]
             v = f*target/(reference[i]*reference[i])
             # Funny syntax below to make sure we write into the original area,
             # not assign a new value
-            tar_shape = [1,rs.shape[1],rs.shape[2]]
+            tar_shape = [1,ds.shape[1],ds.shape[2]]
             tar_origin = [i,0,0]
-            rss = rs.storage.get_section(tar_origin,tar_shape).get_reduced()
-            rsv = rs.var.get_section(tar_origin,tar_shape).get_reduced()
-            rs.var[i] = rsv*f * f
-            rs.var[i] += v * rss * rss
-            rs.storage[i] = rs.storage[i]*f
+            rss = ds.storage.get_section(tar_origin,tar_shape).get_reduced()
+            rsv = ds.var.get_section(tar_origin,tar_shape).get_reduced()
+            ds.var[i] = rsv*f * f
+            ds.var[i] += v * rss * rss
+            ds.storage[i] = ds.storage[i]*f
         info_string = "Data normalised to %f on %s with error propagation assuming counting statistics" % (float(target),refname)
     else:
         # interesting note - if we get here, we are passed a single reference number
@@ -153,54 +151,58 @@ def applyNormalization(ds, reference, target=-1):
         # end up multiplying by 1.0, so no need to do anything at all.
         target = reference
         info_string = "No normalisation applied to data."
-    rs.add_metadata('_pd_proc_info_data_reduction',info_string, append=True)
+    ds.add_metadata('_pd_proc_info_data_reduction',info_string, append=True)
     print 'normalized:', ds.title
     # finalize result
-    rs.title += '-(N)'
-    return rs,target
+    ds.title += '-(N)'
+    return target
 
-def getSummed(ds, floatCopy=True, applyStth=True):
+def getSummed(ds, applyStth=True):
+    """ A faster version of Dataset.intg which discards a lot of the
+    metadata handling that intg needs to do"""
+    import time
     print 'summation of', ds.title
 
     # check arguments
     if ds.ndim != 3:
         raise AttributeError('ds.ndim != 3')
-    if ds.axes[0].title != 'azimuthal_angle':
-        raise AttributeError('ds.axes[0].title != azimuthal_angle')
     if applyStth and (ds.axes[2].title != 'x_pixel_angular_offset'):
         raise AttributeError('ds.axes[2].title != x_pixel_angular_offset')
 
-    # first dimension is summed (for Echidna second dimension is just legacy)
-    if floatCopy:
-        rs = ds[0].float_copy()
-    else:
-        rs = ds[0].__copy__()
-
+    # sum first dimension of storage and variance
     frame_count = ds.shape[0]
-    for frame in xrange(1, frame_count):
-        ds_frame = ds[frame, 0]
+    # detect single frames
+    if frame_count == 1:
+        rs = ds.get_reduced()
+    else:
+        base_data = array.zeroes_like(ds.storage[0])
+        base_var = array.zeroes_like(ds.storage[0])
+        
+        for frame in xrange(0, frame_count):
+            base_data          += ds.storage[frame]
+            base_var           += ds.var[frame]
 
-        rs               += ds_frame
-        rs.bm1_counts    += ds_frame.bm1_counts
-        rs.bm2_counts    += ds_frame.bm2_counts
-        rs.bm3_counts    += ds_frame.bm3_counts
-        rs.detector_time += ds_frame.detector_time
-        rs.total_counts  += ds_frame.total_counts
+        # finalize result
+        rs = Dataset(base_data)
+        rs.var = base_var
+        rs.axes[1] = ds.axes[2]
+        rs.axes[0] = ds.axes[1]
 
-    # finalize result
     rs.title = ds.title + ' (Summed)'
 
-    if applyStth:
-        stth = rs.stth
-        axis = rs.axes[1]
-        for i in xrange(axis.size):
-            axis[i] += stth
-
-        axis.title = 'two theta'
+    if applyStth:  #we check for identity
+        stth = ds.stth
+        if frame_count > 1:    
+            avestth = stth.sum()/len(stth)
+            if max(Array(map(abs,stth-avestth))) > 0.01:   #no absolute value in gumpy
+                print 'Warning: stth is changing, average angular correction applied'
+        else:
+            avestth = stth
+        rs.axes[1] += avestth
+        rs.axes[1].title = 'Two theta'
         rs.stth    = 0
 
     print 'summed frames:', frame_count
-
     return rs
 
 
@@ -441,15 +443,15 @@ def getEfficiencyCorrected(ds, eff):
 
     elif ds.ndim == 3:
         # check arguments
-        if ds.axes[0].title != 'azimuthal_angle':
-            raise AttributeError('ds.axes[0].title != azimuthal_angle')
+        if ds.axes[1].title != 'y_pixel_offset':
+            raise AttributeError('ds.axes[1].title != y_pixel_offset')
         if ds.shape[1:] != eff.shape:
             raise AttributeError('ds.shape[1:] != eff.shape')
 
         # result
         rs = ds.__copy__()
         for frame in xrange(ds.shape[0]):
-            rs[frame, 0] *= eff
+            rs[frame] *= eff
 
         print 'efficiency corrected frames:', rs.shape[0]
 
@@ -458,8 +460,4 @@ def getEfficiencyCorrected(ds, eff):
     rs.title = ds.title + ' (Eff)'
     rs.copy_cif_metadata(ds)
     # now include all the efficiency file metadata, except data reduction
-    for key in eff_metadata.keys():
-        if key not in ("_[local]_efficiency_data","_[local]_efficiency_variance","_pd_proc_info_data_reduction"):
-            rs.add_metadata(key,eff_metadata[key])
-
     return rs

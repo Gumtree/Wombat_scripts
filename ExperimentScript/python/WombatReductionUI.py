@@ -7,13 +7,16 @@ import sys
 ''' User Interface '''
 
 # Output Folder
-out_folder = Par('file', script_source + '/Data/')
+out_folder = Par('file')
 out_folder.dtype = 'folder'
 output_xyd = Par('bool','True')
 output_cif = Par('bool','True')
 output_fxye = Par('bool','False')
 output_stem = Par('string','reduced_')
-Group('Output Folder').add(output_xyd,output_cif,output_fxye,output_stem,out_folder)
+grouping_options = {"Frame":"run_number","TC1 setpoint":"tc1","None":None}
+output_grouping = Par('string','None',options=grouping_options.keys())
+Group('Output Folder').add(output_xyd,output_cif,output_fxye,output_stem,out_folder,
+                           output_grouping)
 
 # Normalization
 # We link the normalisation sources to actual dataset locations right here, right now
@@ -73,10 +76,6 @@ if normalisation_reference:  #saved as location, need label instead
 if efficiency_file_uri:
     eff_map.value = efficiency_file_uri
     
-# Storage for efficiency map
-if not 'eff_map_cache' in globals():
-    eff_map_cache = {}
-    
 ''' Button Actions '''
 
 def show_helper(filename, plot, pre_title = ''):
@@ -102,23 +101,13 @@ def show_helper(filename, plot, pre_title = ''):
             
 # show Background Correction Map
 def bkg_show_proc():
+    global Plot1
     show_helper(bkg_map.value, Plot1, "Background Map: ")
 
 # show Efficiency Correction Map 
 def eff_show_proc():
-    from Reduction import reduction
-    eff_map_canonical = eff_map.value
-    if eff_map.value[0:5] != 'file:':
-        eff_map_canonical = 'file:' + eff_map.value
-    if not eff_map_canonical in eff_map_cache:
-        eff_map_cache[eff_map_canonical] = reduction.read_efficiency_cif(eff_map_canonical)
-    else:
-        print 'Found in cache ' + `eff_map_cache[eff_map_canonical]`
-    Plot1.set_dataset(eff_map_cache[eff_map_canonical][0])
-    Plot1.title = 'Efficiency map' #add info to this title!
-
-# For HDF files
-# show_helper(eff_map.value, Plot1, "Efficiency Map: ")
+    global Plot1
+    show_helper(eff_map.value, Plot1, "Efficiency Map:")
 
 def plh_copy_proc():
     
@@ -227,6 +216,7 @@ def __run_script__(fns):
         print 'no input datasets'
         return
 
+
     # check if input needs to be normalized
     if norm_apply.value:
         # norm_ref is the source of information for normalisation
@@ -272,17 +262,10 @@ def __run_script__(fns):
             eff = None
             print 'WARNING: no eff-map was specified'
         else:
-            eff_map_canonical = str(eff_map.value)
-            if eff_map_canonical[0:5] != 'file:':
-                eff_map_canonical = 'file:' + eff_map_canonical
-            if not eff_map_canonical in eff_map_cache:
-                eff_map_cache[eff_map_canonical] = reduction.read_efficiency_cif(eff_map_canonical)
-            else:
-                print 'Found in cache ' + `eff_map_canonical`
-        eff = eff_map_cache[eff_map_canonical]
+            eff = Dataset(str(eff_map.value))
     else:
         eff = None
-        
+    group_val = grouping_options[str(output_grouping.value)]
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
     # the first dataset unless it has already been specified.
@@ -291,31 +274,61 @@ def __run_script__(fns):
         ds = df[fn]
         # extract basic metadata
         ds = reduction.AddCifMetadata.extract_metadata(ds)
-        # remove redundant dimensions
         rs = ds.get_reduced()
         rs.copy_cif_metadata(ds)
         # check if normalized is required 
         if norm_ref:
-            rs,norm_tar = reduction.applyNormalization(ds, reference=norm_table[norm_ref], target=norm_tar)
+            norm_tar = reduction.applyNormalization(ds, reference=norm_table[norm_ref], target=norm_tar)
         if bkg:
             ds = reduction.getBackgroundCorrected(ds, bkg, norm_table[norm_ref], norm_tar)
         # check if efficiency correction is required
         if eff:
             ds = reduction.getEfficiencyCorrected(ds, eff)
-        cs = reduction.getVerticalIntegrated(ds, axis=0, normalization=norm_const,
-                                                 cluster=float(vig_cluster.value),bottom = int(vig_lower_boundary.value),
-                                                 top=int(vig_upper_boundary.value))
-        Plot2.set_dataset(cs)
-        Plot2.title=cs.title
-        # Output datasets
-        filename_base = join(str(out_folder.value),str(output_stem.value) + basename(str(fn))[:-7])
-        if output_cif.value:
-            output.write_cif_data(cs,filename_base)
-        if output_xyd.value:
-            output.write_xyd_data(cs,filename_base)
-        if output_fxye.value:
-            output.write_fxye_data(cs,filename_base)
-            
+        # perform grouping of sequential input frames    
+        start_frames = len(ds)
+        current_frame_start = 0
+        frameno = 0
+        while frameno < start_frames:
+            if group_val is None:
+                target_val = ""
+                final_frame = start_frames-1
+                frameno = start_frames
+            else:
+                target_val = ds[group_val][current_frame_start]
+                if ds[frameno][group_val] == target_val:
+                    frameno += 1
+                    continue
+            # frameno is the first frame with the wrong values
+            cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
+            cs.copy_cif_metadata(ds)
+            print 'Summing frames from %d to %d, shape %s' % (current_frame_start,frameno-1,cs.shape)
+            if target_val != "":
+                print 'Corresponding to a target value of ' + `target_val`
+            # sum the input frames
+            print 'cs axes: ' + `cs.axes[0].title` + cs.axes[1].title + cs.axes[2].title
+            # es = cs.intg(axis=0)
+            es = reduction.getSummed(cs)  # does axis correction as well
+            es.copy_cif_metadata(cs)
+            print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
+            Plot1.set_dataset(es)
+            cs = reduction.getVerticalIntegrated(es, axis=0, normalization=float(vig_rescale_target.value),
+                                                     bottom = int(vig_lower_boundary.value),
+                                                     top=int(vig_upper_boundary.value))
+            if target_val != "":
+                cs.title = cs.title + "_" + str(target_val)
+            Plot2.add_dataset(cs)
+            # Output datasets
+            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
+            if output_cif.value:
+                output.write_cif_data(cs,filename_base)
+            if output_xyd.value:
+                output.write_xyd_data(cs,filename_base)
+            if output_fxye.value:
+                output.write_fxye_data(cs,filename_base)
+            #loop to next group of datasets
+            current_frame_start = frameno
+            frameno += 1
+
 # dispose
 def __dispose__():
     global Plot1,Plot2,Plot3

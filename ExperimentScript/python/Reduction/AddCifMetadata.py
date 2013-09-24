@@ -29,10 +29,18 @@ def add_metadata_methods(rawfile):
             metadata_store[key] = value
 
     def h(self,tag):
-        return self.__dict__['ms']
+        try:
+            return self.__dict__['ms']
+        except KeyError:
+            print 'Warning: metadata dictionary has been lost'
+            return {}
 
     def c(self,old):
-        self.__dict__['ms'] = old.__dict__['ms']
+        try:
+            self.__dict__['ms'] = old.__dict__['ms']
+        except KeyError:
+            print 'Warning: metadata dictionary has been lost'
+
 
     rawfile.__dict__['ms'] = CifBlock()
     rawfile.__class__.__dict__['add_metadata'] = p
@@ -68,7 +76,6 @@ def extract_metadata(rawfile):
     rawfile.add_metadata("_pd_meas_info_author_name", username,"CIF")
     rawfile.add_metadata("_pd_meas_info_author_email", str(rawfile[ "$entry/user/email"]),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_phone", str(rawfile[ "$entry/user/phone"]),"CIF")
-    rawfile.add_metadata("_pd_instr_dist_mono/spec", "%.1f" % average_metadata(rawfile[ "$entry/sample/mono_sample_mm"]),"CIF")
     rawfile.add_metadata("_pd_instr_dist_spec/detc","%.1f" % average_metadata(rawfile["$entry/instrument/detector/radius"]),"CIF")
     rawfile.add_metadata("_diffrn_source_power", "%.2f" % (average_metadata(rawfile["$entry/instrument/source/power"])*1000),"CIF")
     rawfile.add_metadata("_diffrn_radiation_probe", "neutron","CIF")

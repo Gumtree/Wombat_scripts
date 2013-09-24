@@ -133,17 +133,19 @@ def __run_script__(fns):
 
     # check if input needs to be normalized
     if norm_apply.value:
-        norm_ref = str(norm_reference.value)
-    
+        norm_ref = norm_table[str(norm_reference.value)]
+    else:
+        norm_ref = None
     if eff_make.value:
-        eff = calibrations.calc_eff_mark2(van, bkg, norm_ref=norm_table[norm_ref],
-                                          esd_cutoff=eff_std_range.value)
-
+        #eff = calibrations.calc_eff_mark2(van, bkg, norm_ref=norm_table[norm_ref],
+        #                                  esd_cutoff=eff_std_range.value)
+        eff, pix_ok = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref,var_cutoff = eff_std_range.value**2)
     output_filename = join(str(out_folder.value), str(eff_name.value))
     # write out new efficiency file
     import time
     print 'Writing efficiency file at %s' % time.asctime()
-    calibrations.output_2d_efficiencies(eff, output_filename, comment='Created by Gumtree')
+    eff.save_copy(output_filename)
+    #calibrations.output_2d_efficiencies(eff, output_filename, comment='Created by Gumtree')
     print 'Finished writing at %s' % time.asctime()
     
 # dispose

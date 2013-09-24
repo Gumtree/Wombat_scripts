@@ -12,7 +12,8 @@ from gumpy.nexus.dataset import Dataset
 
 import os.path as path
 
-ABSOLUTE_DATA_SOURCE_PATH = path.abspath('W:/data/current')
+#ABSOLUTE_DATA_SOURCE_PATH = path.abspath('W:/data/current')
+ABSOLUTE_DATA_SOURCE_PATH = '/home/jrh/programs/Wombat/Wombat-Gumtree-Scripts/Wombat_scripts/ExperimentScript/python/Data'
 DICTIONARY_FILENAME       = 'path_table'
 
 # set up WBT factory

@@ -46,3 +46,6 @@ sth = $entry/sample/half_azimuthal_angle
 sx = $entry/sample/translate_x
 sy = $entry/sample/translate_y
 som = $entry/sample/rotate
+
+run_number = $entry/data/run_number
+tc1 = $entry/sample/tc1/sensor/setpoint1

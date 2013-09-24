@@ -4,8 +4,77 @@ import AddCifMetadata,reduction
 import os
 from gumpy.nexus import *
 
+def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=1.0):
+    """Calculate efficiencies given vanadium and background hdf files. 
+
+    The approach of this simple version is, after subtracting background, to find the sum of
+    all the frames and assume that this is proportional to the gain.
+
+    norm_ref is the source of normalisation counts for putting each frame and each dataset onto a
+    common scale. Pixels with an estimated error greater than esd_cutoff will be marked as bad.
+    (not yet implemented).
+    """
+
+    import stat,datetime,time
+    starttime = time.time()
+    omega = vanad["mom"][0]  # for reference
+    takeoff = vanad["mtth"][0]
+    # TODO: intelligent determination of Wombat wavelength
+    #crystal = AddCifMetadata.pick_hkl(omega-takeoff/2.0,"335")  #post April 2009 used 335 only
+    #
+    # Get important information from the basic files
+    #
+    # Get file times from timestamps as older NeXuS files had bad values here
+    #
+    #wl = AddCifMetadata.calc_wavelength(crystal,takeoff)
+    vtime = os.stat(vanad.location)[stat.ST_CTIME]
+    vtime = datetime.datetime.fromtimestamp(vtime)
+    vtime = vtime.strftime("%Y-%m-%dT%H:%M:%S%z")
+    btime = os.stat(backgr.location)[stat.ST_CTIME]
+    btime = datetime.datetime.fromtimestamp(btime)
+    btime = btime.strftime("%Y-%m-%dT%H:%M:%S%z")
+    # This step required to insert our metadata hooks into the dataset object
+    AddCifMetadata.add_metadata_methods(vanad)
+    AddCifMetadata.add_metadata_methods(backgr)
+    # Fail early
+    print 'Using %s and %s' % (str(vanad.location),str(backgr.location))
+    # Subtract the background if requested
+    check_val = backgr[12,64,64]
+    if norm_ref is not None:
+        norm_target = reduction.applyNormalization(vanad,norm_ref,-1)
+        # store for checking later
+        check_val = backgr[12,64,64]
+        nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
+        # 
+        print 'Normalising background to %f'  % norm_target
+    pure_vanad = (vanad - backgr).get_reduced()    #remove the annoying 2nd dimension
+    # pure_vanad.copy_cif_metadata(vanad)
+    print 'Check: %f, %f -> %f' % (vanad[12,64,64],check_val,pure_vanad[12,64,64])
+    pure_vanad = pure_vanad.intg(axis=0)   # sum over the detector step axis
+    # no pixels 10 times less than the maximum
+    minrate = pure_vanad.max()/10.0
+    zerovals = array.zeros_like(pure_vanad)
+    zerovals[pure_vanad<minrate] = 1.0
+    pure_vanad[zerovals==1.0] = 1.0
+    eff_array = 1.0/pure_vanad.storage
+    eff_array[zerovals==1.0] = 0.0
+    eff_error = pure_vanad.var * (eff_array**4)
+    eff_error[zerovals==1.0] = 1.0
+    # normalise to an average gain of 1
+    bad_pix = zerovals.sum()
+    ave_eff = eff_array.sum()/(eff_array.size - bad_pix)
+    eff_array /= ave_eff
+    # pixel OK map...anything with positive efficiency but variance is no 
+    # greater than the efficiency (this latter is arbitrary)
+    pix_ok_map = array.ones_like(eff_array)
+    pix_ok_map[eff_error > var_cutoff * eff_array] = 0.0  
+    print "Variance not OK pixels %d" % (pix_ok_map.sum() - pix_ok_map.size)
+    final_map = Dataset(eff_array)
+    final_map.var = eff_error
+    return final_map, pix_ok_map
+
 def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 127, 
-    detail=None,splice=None, esd_cutoff=1.0,det_edges=[1,966]):
+    detail=None,splice=None, esd_cutoff=1.0,det_edges=[9,964]):
     """Calculate efficiencies given vanadium and background hdf files.  If detail is
     some integer, detailed calculations for that y position will be displayed. Edge is a
     list of tuples ((ypixel,step),) before which the tube is assumed to be blocked and therefore
@@ -26,7 +95,8 @@ def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 
     
     Dead_cols is a list of pixel columns that are dead."""
 
-    import stat,datetime
+    import stat,datetime,time
+    starttime = time.time()
     omega = vanad["mom"][0]  # for reference
     takeoff = vanad["mtth"][0]
     # TODO: intelligent determination of Wombat wavelength
@@ -55,12 +125,9 @@ def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 
     backgr,nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
     # 
     print 'Normalising background to %f'  % norm_target
-    pure_vanad = (vanad - backgr).get_reduced()    #remove the annoying 2nd dimension
-    pure_vanad.copy_cif_metadata(vanad)
+    pure_vanad = (vanad.storage - backgr.storage).get_reduced()    #remove the annoying 2nd dimension
+    # pure_vanad.copy_cif_metadata(vanad)
     print 'Check: %f, %f -> %f' % (vanad[12,64,64],check_val,pure_vanad[12,64,64])
-    #
-    # move the vertical pixels to correct positions
-    #
     nosteps = pure_vanad.shape[0]
     # now we have to get some efficiency numbers out.  We will have nosteps 
     # observations of each value, if nothing is blocked or scrubbed.   We obtain a
@@ -84,7 +151,7 @@ def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 
         ypixel_count[0:bs] = ypixel_count[0:bs] - 1
     # Now zero out excluded regions
     pure_vanad = pure_vanad[:,bottom:top,det_edges[0]:det_edges[1]]
-    missing_total = det_edges[0] + 1 + (pure_vanad[0].shape[-1]-det_edges[1]-1)
+    missing_total = det_edges[0] + (eff_array[0].shape[-1]-det_edges[1]-1)
     ypixel_count[:] = ypixel_count[:] - missing_total
     print "Ypixel count by step: " + `ypixel_count.tolist()`
     print "%d pixels missing at edges" % missing_total
@@ -92,14 +159,18 @@ def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 
     # at that step.
     step_sum = pure_vanad.sum(0) #total counts at each step - meaning is different to numpy
     average = step_sum/(ypixel_count * (top - bottom))  #average value for gain normalisation
-    print "Average intensity seen at each step: " + `average.tolist()`
+    print "Average intensity seen at each step: " + `average`
+    print 'Time now %f from start' % (time.time() - starttime)
     # No broadcasting, have to be clever.  We have to keep our storage in
     # gumpy, not Jython, so we avoid creating large jython lists by not
     # using map.
-    step_gain = ones(pure_vanad.shape)
-    for new,old,av in zip(range(len(step_gain)),pure_vanad,average):
-        step_gain[new] = old/av
-    step_gain = step_gain.transpose()  # so now have [ypixel,vertical,step]
+    # step_gain = array.ones(pure_vanad.shape)
+    sec_shape = [1,pure_vanad.shape[1],pure_vanad.shape[2]]
+    for new in range(len(step_gain)):
+        pvas = pure_vanad.get_section([new,0,0],sec_shape)
+        pvas /= average[new]
+    step_gain = pure_vanad.transpose()  # so now have [ypixel,vertical,step]
+    print 'Step gain calculated: Time now %f from start' % (time.time() - starttime)
     # Now each point in step gain is the gain of this pixel at that step, using
     # the total counts at that step as normalisation
     # We add the individual observations to obtain the total gain...
@@ -109,16 +180,16 @@ def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 
     gain_as_vectors = step_gain.reshape([step_gain.shape[0],step_gain.shape[1]*step_gain.shape[2]]) 
     gain_as_vectors = gain_as_vectors.transpose()
     # count the non-zero contributions
-    nonzero_contribs = zeros(gain_as_vectors.shape,dtype=float)
+    nonzero_contribs = array.zeros(gain_as_vectors.shape,dtype=float)
     nonzero_contribs[gain_as_vectors>0] = 1.0
+    print 'Have non-zero: Time now %f from start' % (time.time() - starttime)
     nz_sum = nonzero_contribs.sum(axis=0)
     gain_sum = gain_as_vectors.sum(axis=0)
     total_gain = gain_sum/nz_sum
     final_gain = total_gain.reshape([step_gain.shape[1],step_gain.shape[2]])
     print 'We have total gain: ' + `final_gain`
     print 'Shape ' + `final_gain.shape`
-    import time
-    elapsed = time.clock()
+    print 'Time now %f from start' % (time.time() - starttime)
     # efficiency speedup; we would like to write
     # eff_array[:,bottom:top] = 1.0/final_gain
     # but anything in gumpy with square brackets goes crazy slow.
@@ -127,7 +198,7 @@ def calc_eff_mark2(vanad,backgr,edge=(),norm_ref="bm3_counts",bottom = 0, top = 
     fgi = final_gain.item_iter()
     while eas_iter.has_next():
         eas_iter.set_next(1.0/fgi.next())
-    print 'Efficiency array setting took %f' % (time.clock() - elapsed)
+    print 'Efficiency array setting took until %f' % (time.time() - starttime)
     print 'Check: element (64,64) is %f' % (eff_array[64,64])
     # Calculate the covariance of the final sum as the covariance of the
     # series of observations, divided by the number of observations
