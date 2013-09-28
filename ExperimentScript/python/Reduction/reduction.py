@@ -145,13 +145,15 @@ def applyNormalization(ds, reference, target=-1):
             ds.var[i] += v * rss * rss
             ds.storage[i] = ds.storage[i]*f
         info_string = "Data normalised to %f on %s with error propagation assuming counting statistics" % (float(target),refname)
+        print info_string
     else:
         # interesting note - if we get here, we are passed a single reference number
         # and a negative target, meaning that we use the reference as the target and
         # end up multiplying by 1.0, so no need to do anything at all.
         target = reference
         info_string = "No normalisation applied to data."
-    ds.add_metadata('_pd_proc_info_data_reduction',info_string, append=True)
+        print info_string
+    ds.add_metadata('_pd_proc_info_data_reduction',info_string, tag="CIF",append=True)
     print 'normalized:', ds.title
     # finalize result
     ds.title += '-(N)'

@@ -20,9 +20,16 @@ def add_metadata_methods(rawfile):
     # handle our metadata, completely bypassing the built-in methods. We do this because
     # we think leaving the metadata at the Python level is simpler, but subclassing the Dataset
     # class and initialising from a Dataset looks clunky and awkward.
-    # Tag keyword is included for legacy reasons
-    def p(self,key,value,tag="CIF",append=False):
-        metadata_store = self.__dict__['ms']  #get around gumpy intercepting getattr
+    # Tag keyword is included for legacy reasons.
+    #
+    # Do not call this until you will no longer change any attributes of rawfile - otherwise
+    # the attribute setting will be intercepted by these routines instead of gumpy
+    #
+    def p(self,key,value,tag=None,append=False):
+        if tag!="CIF":
+            self.old_add_metadata(key,value)
+            return
+        metadata_store = self.__dict__['ms']  #use dict to get around gumpy intercepting getattr
         if metadata_store.has_key(key) and append is True:
             metadata_store[key] = metadata_store[key] + '\n' + value
         else:
@@ -41,12 +48,18 @@ def add_metadata_methods(rawfile):
         except KeyError:
             print 'Warning: metadata dictionary has been lost'
 
+    # we change the class methods. If we change just the instance
+    # methods, then when they are retrieved the 'self' argument
+    # is not added to the call.
+    if not rawfile.__class__.__dict__.has_key('old_add_metadata'):
+        rawfile.__class__.__dict__['old_add_metadata'] = \
+            rawfile.__class__.__dict__['add_metadata']
+        rawfile.__class__.__dict__['add_metadata'] = p
+        rawfile.__class__.__dict__['harvest_metadata'] = h
+        rawfile.__class__.__dict__['copy_cif_metadata'] = c
 
     rawfile.__dict__['ms'] = CifBlock()
-    rawfile.__class__.__dict__['add_metadata'] = p
-    rawfile.__class__.__dict__['harvest_metadata'] = h
-    rawfile.__class__.__dict__['copy_cif_metadata'] = c
-
+    
 def extract_metadata(rawfile):
     import datetime
     add_metadata_methods(rawfile)
