@@ -3,6 +3,8 @@ __script__.title     = 'WOM Reduction'
 __script__.version   = '1.0'
 
 import sys
+# For direct access to the selected filenames
+__datasource__ = __register__.getDataSourceViewer()
 
 ''' User Interface '''
 
@@ -20,12 +22,15 @@ Group('Output Folder').add(output_xyd,output_cif,output_fxye,output_stem,out_fol
 
 # Normalization
 # We link the normalisation sources to actual dataset locations right here, right now
-norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts',
-              'Monitor 3':'bm3_counts','Detector time':'detector_time'}
+norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts'
+              ,'Detector time':'detector_time'}
 norm_apply     = Par('bool', 'True')
 norm_reference = Par('string', 'Monitor 3', options = norm_table.keys())
-norm_target    = Par('string', 'auto')
-Group('Normalization').add(norm_apply, norm_reference, norm_target)
+norm_reference.title = 'Source'
+norm_target    = 'auto'
+norm_plot = Act('plot_norm_proc()','Plot')
+norm_plot_all = Act('plot_all_norm_proc()','Plot all')
+Group('Normalization').add(norm_apply, norm_reference,norm_plot_all,norm_plot)
 
 # Background Correction
 bkg_apply = Par('bool', 'False')
@@ -78,11 +83,38 @@ if efficiency_file_uri:
     
 ''' Button Actions '''
 
+# Plot normalisation info
+def plot_norm_proc():
+    plot_norm_master()
+
+def plot_all_norm_proc():
+    """Plot all normalisation values found in file"""
+    plot_norm_master(all_mons=True)
+
+def plot_norm_master(all_mons = False):
+    dss = __datasource__.getSelectedDatasets()
+    if Plot2.ds:
+        remove_list = copy(Plot2.ds)  #otherwise dynamically changes
+        for ds in remove_list:
+            Plot2.remove_dataset(ds)  #clear doesn't work
+    for fn in dss:
+        loc = fn.getLocation()
+        dset = df[str(loc)]
+        print 'Dataset %s' % os.path.basename(str(loc))
+        for monitor_loc in norm_table.keys():
+            if all_mons or monitor_loc == str(norm_reference.value):
+                norm_source = norm_table[monitor_loc]
+                plot_data = Dataset(getattr(dset,norm_source))
+                if norm_apply.value or all_mons:
+                    ave_val = plot_data.sum()/len(plot_data)
+                    plot_data = plot_data/ave_val
+                plot_data.title = os.path.basename(str(loc))+':' + str(monitor_loc) + '_'
+                send_to_plot(plot_data,Plot2,add=True)
+        
 def show_helper(filename, plot, pre_title = ''):
     if filename:
         
         ds = Dataset(str(filename))
-        plot.clear()
         
         if ds.ndim == 4:
             plot.set_dataset(ds[0, 0])
@@ -184,7 +216,7 @@ def plh_delete_proc():
         return
     
     target_plot = plots[target]
-    target_ds   = target_plot.ds
+    target_ds   = copy(target_plot.ds)
     
     if (type(target_ds) is not list) or (len(target_ds) == 0):
         print 'target plot does not contain 1D datasets'
@@ -199,6 +231,74 @@ def plh_delete_proc():
             if ds.title == dataset:
                 target_plot.remove_dataset(ds)
 
+def dspacing_change():
+    """Toggle the display of d spacing on the horizontal axis"""
+    global Plot2,Plot3
+    from Reduction import reduction
+    plot_table = {'Plot 2':Plot2, 'Plot 3':Plot3}
+    target_plot = plot_table[str(ps_plotname.value)]
+    if target_plot.ds is None:
+        return
+    # Preliminary check we are not displaying something
+    # irrelevant, e.g. monitor counts
+    for ds in target_plot.ds:
+        if ds.axes[0].name not in ['Two theta','d-spacing']:
+            return
+    change_dss = copy(target_plot.ds)
+    # Check to see what change is required
+    need_d_spacing = ps_dspacing.value
+    # target_plot.clear() causes problems; use 'remove' instead
+    # need to set the xlabel by hand due to gplot bug
+    if need_d_spacing: target_plot.x_label = 'd-spacing (Angstroms)'
+    elif not need_d_spacing: target_plot.x_label = 'Two theta (Degrees)'
+    target_plot.y_label = 'Intensity'
+    for ds in change_dss:
+        current_axis = ds.axes[0].name
+        print '%s has axis %s' % (ds.title,current_axis)
+        if need_d_spacing:    
+            result = reduction.convert_to_dspacing(ds)
+        elif not need_d_spacing:
+            result = reduction.convert_to_twotheta(ds)
+        if result == 'Changed':
+            target_plot.remove_dataset(ds)
+            target_plot.add_dataset(ds)
+
+# The preference system: 
+def load_user_prefs(prefix = ''):
+    """Load preferences, optionally prepending the value of
+    prefix in the preference search.  This is typically used
+    to load an alternative set of preferences"""
+    # Run through our parameters, looking for the corresponding
+    # preferences
+    p = globals().scope_keys()
+    for name in p:
+        if eval('isinstance('+ name + ',Par)'):
+            execstring = name + '.value = "' + get_prof_value(prefix+name) + '"'
+            try:
+                exec execstring in globals()
+            except:
+                print 'Failure setting %s to %s' % (name,str(get_prof_value(prefix+name)))
+            print 'Set %s to %s' % (name,str(eval(name+'.value')))
+
+def save_user_prefs(prefix=''):
+    """Save user preferences, optionally prepending the value of
+    prefix to the preferences. This prefix is typically used to
+    save an alternative set of preferences.  Return lists of values
+    as ASCII strings for logging purposes"""
+    print 'In save user prefs'
+    prof_names = []
+    prof_vals = []
+    # sneaky way to get all the preferences
+    p = globals().scope_keys()
+    for name in p:
+        if eval('isinstance('+ name + ',Par)'):
+            prof_val = str(eval(name + '.value'))
+            set_prof_value(prefix+name,prof_val)
+            print 'Set %s to %s' % (prefix+name,str(get_prof_value(prefix+name)))
+            prof_names.append(name)
+            prof_vals.append(prof_val)
+    return prof_names,prof_vals        
+
 ''' Script Actions '''
 
 # This function is called when pushing the Run button in the control UI.
@@ -211,6 +311,9 @@ def __run_script__(fns):
     
     df.datasets.clear()
     
+    # save user preferences
+    prof_names,prof_values = save_user_prefs()
+
     # check input
     if (fns is None or len(fns) == 0) :
         print 'no input datasets'
@@ -288,16 +391,19 @@ def __run_script__(fns):
         start_frames = len(ds)
         current_frame_start = 0
         frameno = 0
-        while frameno < start_frames:
+        while frameno <= start_frames:
             if group_val is None:
                 target_val = ""
                 final_frame = start_frames-1
                 frameno = start_frames
             else:
                 target_val = ds[group_val][current_frame_start]
-                if ds[frameno][group_val] == target_val:
-                    frameno += 1
-                    continue
+                try:
+                    if ds[frameno][group_val] == target_val:
+                        frameno += 1
+                        continue
+                except:   #Assume an exception is due to too large frameno
+                    pass
             # frameno is the first frame with the wrong values
             cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
             cs.copy_cif_metadata(ds)
@@ -328,6 +434,35 @@ def __run_script__(fns):
             #loop to next group of datasets
             current_frame_start = frameno
             frameno += 1
+            
+''' Utility functions for plots '''
+def send_to_plot(dataset,plot,add=False,change_title=True,add_timestamp=True):
+    """This routine appends a timestamp to the dataset title
+    in order to keep uniqueness of the title for later 
+    identification purposes. It also maintains plot
+    consistency in terms of displaying d-spacing."""
+    from datetime import datetime
+    from Reduction import reduction
+    if add_timestamp:
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        dataset.title = dataset.title + timestamp
+    # Check d-spacing status
+    if plot.ds:
+        if plot.ds[0].axes[0].name == 'd-spacing':
+            reduction.convert_to_dspacing(dataset)
+        elif plot.ds[0].axes[0].name == 'Two theta':
+            reduction.convert_to_twotheta(dataset)
+    if add:
+        plot.add_dataset(dataset)
+    else:
+        plot.set_dataset(dataset)
+    if change_title:
+        plot.title = dataset.title
+    #Update any widgets that keep a track of the plots
+    if plot == Plot3:   #Delete only operates on plot 3
+        curves = ['All'] + map(lambda a:a.title,plot.ds)
+        plh_dataset.options = curves
+        plh_dataset.value = 'All'
 
 # dispose
 def __dispose__():
@@ -335,7 +470,6 @@ def __dispose__():
     Plot1.clear()
     Plot2.clear()
     Plot3.clear()
-
 
 ''' Quick-Fix '''
 
@@ -348,3 +482,8 @@ def run_action(act):
         act.set_error_status()
         traceback.print_exc(file = sys.stdout)
         raise Exception, 'Error in running <' + act.text + '>'
+    
+''' Execute this each time it is loaded to reload user preferences '''
+
+load_user_prefs()
+

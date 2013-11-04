@@ -33,9 +33,8 @@ Group('Normalization').add(norm_apply, norm_reference)
 # Efficiency Correction Map
 eff_make = Par('bool'  , 'True')
 eff_name = Par('string', today.strftime("eff_%Y_%m_%d.cif"))
-eff_transpose = Par('bool', 'False')
 eff_std_range      = Par('float' , '1.8' )
-Group('Efficiency Correction Map').add(eff_make, eff_name, eff_std_range,eff_transpose)
+Group('Efficiency Correction Map').add(eff_make, eff_name, eff_std_range)
 
 ''' Load Preferences '''
 

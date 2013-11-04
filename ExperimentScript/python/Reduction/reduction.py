@@ -153,8 +153,6 @@ def applyNormalization(ds, reference, target=-1):
         info_string = "No normalisation applied to data."
     ds.add_metadata('_pd_proc_info_data_reduction',info_string, append=True)
     print 'normalized:', ds.title
-    # finalize result
-    ds.title += '-(N)'
     return target
 
 def getSummed(ds, applyStth=True):
@@ -175,8 +173,8 @@ def getSummed(ds, applyStth=True):
     if frame_count == 1:
         rs = ds.get_reduced()
     else:
-        base_data = array.zeroes_like(ds.storage[0])
-        base_var = array.zeroes_like(ds.storage[0])
+        base_data = zeros_like(ds.storage[0])
+        base_var = zeros_like(ds.storage[0])
         
         for frame in xrange(0, frame_count):
             base_data          += ds.storage[frame]
@@ -188,7 +186,7 @@ def getSummed(ds, applyStth=True):
         rs.axes[1] = ds.axes[2]
         rs.axes[0] = ds.axes[1]
 
-    rs.title = ds.title + ' (Summed)'
+    rs.title = ds.title
 
     if applyStth:  #we check for identity
         stth = ds.stth
@@ -200,9 +198,9 @@ def getSummed(ds, applyStth=True):
             avestth = stth
         rs.axes[1] += avestth
         rs.axes[1].title = 'Two theta'
-        rs.stth    = 0
 
     print 'summed frames:', frame_count
+    rs.copy_cif_metadata(ds)
     return rs
 
 
@@ -269,14 +267,14 @@ def getVerticalIntegrated(ds, okMap=None, normalization=-1, axis=1,top=None,bott
     totals.var = save_var/contribs
 
     # finalize result
-    totals.title = ds.title + ' (Summed from %d to %d)' % (bottom,top)
+    totals.title = ds.title
     totals.copy_cif_metadata(ds)
     info_string = "Data were vertically integrated from pixels %d to %d (maximum number of contributors %d)." % (bottom,top,max_contribs)
     
     # normalize result if required
     if normalization > 0:
         totals *= (float(normalization) / totals.max())
-        totals.title = totals.title + ' (x %5.2f)' % (float(normalization)/totals.max())
+        totals.title = totals.title
         info_string += "The maximum intensity was then normalised to %f counts." % float(normalization)
     # check if any axis needs to be converted from boundaries to centers
     new_axes = []
@@ -415,7 +413,7 @@ def getBackgroundCorrected(ds, bkg, norm_ref=None, norm_target=-1):
     else:
         raise AttributeError('ds.ndim != 2 or 3')
     # finalize result
-    rs.title = ds.title + ' (B)'
+    rs.title = ds.title
     info_string = 'Background subtracted using %s' % str(bkg.title)
     if norm_ref:
         info_string += 'after normalising to %f using monitor %s.' % (norm_target,norm_ref)
@@ -457,7 +455,7 @@ def getEfficiencyCorrected(ds, eff):
 
     else:
         raise AttributeError('ds.ndim != 2 or 3')
-    rs.title = ds.title + ' (Eff)'
+    rs.title = ds.title
     rs.copy_cif_metadata(ds)
     # now include all the efficiency file metadata, except data reduction
     return rs
