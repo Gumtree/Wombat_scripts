@@ -146,7 +146,10 @@ def plot_values_proc():
         dset = df[str(loc)]
         filename = os.path.basename(str(loc))
         print '\nInformation for filename: %s\n' % filename
-        true_key = plot_choice_table[target][0]
+        try:
+            true_key = plot_choice_table[target][0]
+        except KeyError: # user input directly
+            true_key = target
         try:
             value = getattr(dset,true_key)
         except:
@@ -157,11 +160,18 @@ def plot_values_proc():
         # Print raw values
         print "%s: " % target + `value`
         dset = Dataset(value)
-        dset.var = (dset.storage * plot_choice_table[target][2] / 100.0)**2
+        try:
+            dset.var = (dset.storage * plot_choice_table[target][2] / 100.0)**2
+        except KeyError: # user gives address
+            dset.var = dset.storage * 0.02
         dset.title = filename + ":" + target
         Plot2.set_dataset(dset)
         Plot2.x_label = 'Step'
-        Plot2.y_label = plot_choice_table[target][1]
+        Plot2.title = 'Information plot'
+        try:
+            Plot2.y_label = plot_choice_table[target][1]
+        except KeyError:
+            Plot2.y_label = target
 
 def import_proc():
     """Import a three-column ASCII file (TODO: CIF). Any line whose first non-whitespace character
