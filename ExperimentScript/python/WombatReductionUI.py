@@ -270,12 +270,12 @@ def load_user_prefs(prefix = ''):
     to load an alternative set of preferences"""
     # Run through our parameters, looking for the corresponding
     # preferences
-    p = globals().scope_keys()
+    g = globals()
+    p = g.scope_keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
-            execstring = name + '.value = "' + get_prof_value(prefix+name) + '"'
             try:
-                exec execstring in globals()
+               setattr(g[name],'value',get_prof_value(prefix+name))
             except:
                 print 'Failure setting %s to %s' % (name,str(get_prof_value(prefix+name)))
             print 'Set %s to %s' % (name,str(eval(name+'.value')))
@@ -289,12 +289,15 @@ def save_user_prefs(prefix=''):
     prof_names = []
     prof_vals = []
     # sneaky way to get all the preferences
-    p = globals().scope_keys()
+    g = globals()
+    p = g.scope_keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
-            prof_val = str(eval(name + '.value'))
-            set_prof_value(prefix+name,prof_val)
-            print 'Set %s to %s' % (prefix+name,str(get_prof_value(prefix+name)))
+            print `name`
+            prof_val = getattr(g[name], 'value')
+            print str(prof_val)
+            set_prof_value(prefix+name,str(prof_val))
+            print 'Set %s to %s' % (prefix+name,get_prof_value(prefix+name))
             prof_names.append(name)
             prof_vals.append(prof_val)
     return prof_names,prof_vals        
@@ -327,7 +330,7 @@ def __run_script__(fns):
         # by multiplication.  If 'auto', the maximum value of norm_ref
         # for the first dataset is used, otherwise any number may be entered.
         norm_ref = str(norm_reference.value)
-        norm_tar = str(norm_target.value).lower()
+        norm_tar = norm_target
 
         # check if normalization target needs to be determined
         if len(norm_tar) == 0:
