@@ -81,7 +81,9 @@ def applyNormalization(ds, reference, target=-1):
        target is the target value to which they will be adjusted.  If target is not specified, the maximum value of
        the reference array is used and reported for further use. The variance of the values in the reference array
        is assumed to follow counting statistics.  We modify the input dataset rather than creating a new dataset
-       as files on Wombat are so large."""
+       as files on Wombat are so large. We need to make sure that the
+       input dataset is converted to float, otherwise the multiplcation
+       will be integer."""
     print 'normalization of', ds.title
     # Store reference name for later
     refname = str(reference)
@@ -447,12 +449,11 @@ def getEfficiencyCorrected(ds, eff):
             raise AttributeError('ds.shape[1:] != eff.shape')
 
         # result
-        rs = ds.__copy__()
+        rs = zeros(ds.shape,dtype='float') #otherwise might be int array
         for frame in xrange(ds.shape[0]):
-            rs[frame] *= eff
-
+            rs[frame] = ds[frame] * eff
         print 'efficiency corrected frames:', rs.shape[0]
-
+        rs.axes = ds.axes
     else:
         raise AttributeError('ds.ndim != 2 or 3')
     rs.title = ds.title

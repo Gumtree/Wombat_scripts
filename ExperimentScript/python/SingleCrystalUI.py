@@ -1,5 +1,5 @@
 # Script control setup area
-__script__.title     = 'WOM Reduction'
+__script__.title     = 'WOM Single Crystal'
 __script__.version   = '1.0'
 
 import sys
@@ -8,18 +8,11 @@ __datasource__ = __register__.getDataSourceViewer()
 
 ''' User Interface '''
 
-# Output Folder
-out_folder = Par('file')
-out_folder.dtype = 'folder'
-output_xyd = Par('bool','True')
-output_cif = Par('bool','True')
-output_fxye = Par('bool','False')
-output_stem = Par('string','reduced_')
-grouping_options = {"Frame":"run_number","TC1 setpoint":"tc1","None":None}
-output_grouping = Par('string','None',options=grouping_options.keys())
-Group('Output Folder').add(output_xyd,output_cif,output_fxye,output_stem,out_folder,
-                           output_grouping)
-
+# Axis setup
+# possible rotation axes
+rot_table = {'Sample rotation':'/entry1/sample/som','Sample stage':'/entry1/sample/rotate'}
+rot_axis = Par('string','Magnet rotation',options = rot_table.keys())
+Group('Axis setup').add(rot_axis)
 # Normalization
 # We link the normalisation sources to actual dataset locations right here, right now
 norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts'
@@ -49,9 +42,7 @@ Group('Efficiency Correction').add(eff_apply, eff_map, eff_show)
 # Vertical Integration
 vig_lower_boundary = Par('int', '0')
 vig_upper_boundary = Par('int', '127')
-vig_apply_rescale  = Par('bool', 'True')
-vig_rescale_target = Par('float', '10000.0')
-Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target)
+Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary)
 
 # Plot Helper
 plh_from = Par('string', 'Plot 2', options = ['Plot 1', 'Plot 2', 'Plot 3'])
@@ -63,23 +54,6 @@ plh_plot    = Par('string', '', options = ['Plot 1', 'Plot 2', 'Plot 3'], comman
 plh_dataset = Par('string', '', options = ['All'])
 plh_delete  = Act('plh_delete_proc()', 'Delete')
 Group('Delete 1D Datasets').add(plh_plot, plh_dataset, plh_delete)
-
-
-''' Load Preferences '''
-
-efficiency_file_uri     = __UI__.getPreference("au.gov.ansto.bragg.wombat.ui:efficiency_file_uri")
-normalisation_reference = __UI__.getPreference("au.gov.ansto.bragg.wombat.ui:normalisation_reference")
-user_output_dir         = __UI__.getPreference("au.gov.ansto.bragg.wombat.ui:user_output_dir")
-#
-# Set the optional values to those in the preferences file
-#
-if user_output_dir:
-    out_folder.value = user_output_dir
-if normalisation_reference:  #saved as location, need label instead
-        vals = filter(lambda a:a[1]==normalisation_reference,norm_table.items())
-        if vals: norm_reference.value = vals[0]
-if efficiency_file_uri:
-    eff_map.value = efficiency_file_uri
     
 ''' Button Actions '''
 
@@ -108,8 +82,11 @@ def plot_norm_master(all_mons = False):
                 if norm_apply.value or all_mons:
                     ave_val = plot_data.sum()/len(plot_data)
                     plot_data = plot_data/ave_val
+                    vert_axis = 'Counts relative to average'
+                else:
+                    vert_axis = 'Counts'
                 plot_data.title = os.path.basename(str(loc))+':' + str(monitor_loc) + '_'
-                send_to_plot(plot_data,Plot2,add=True)
+                send_to_plot(plot_data,Plot2,add=True,change_title='Monitor counts', vert_axis=vert_axis)
         
 def show_helper(filename, plot, pre_title = ''):
     if filename:
@@ -293,7 +270,9 @@ def save_user_prefs(prefix=''):
     p = g.scope_keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
+            print `name`
             prof_val = getattr(g[name], 'value')
+            print str(prof_val)
             set_prof_value(prefix+name,str(prof_val))
             print 'Set %s to %s' % (prefix+name,get_prof_value(prefix+name))
             prof_names.append(name)
@@ -320,7 +299,8 @@ def __run_script__(fns):
         print 'no input datasets'
         return
 
-
+    # Store vertical axis information
+    rot_info = rot_table[str(rot_axis.value)]
     # check if input needs to be normalized
     if norm_apply.value:
         # norm_ref is the source of information for normalisation
@@ -369,7 +349,6 @@ def __run_script__(fns):
             eff = Dataset(str(eff_map.value))
     else:
         eff = None
-    group_val = grouping_options[str(output_grouping.value)]
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
     # the first dataset unless it has already been specified.
@@ -379,8 +358,10 @@ def __run_script__(fns):
         # extract basic metadata
         ds = reduction.AddCifMetadata.extract_metadata(ds)
         rs = ds.get_reduced()
-        rs = rs * 1.0  #convert to float
+        rs = rs * 1.0 # convert to float
         rs.copy_cif_metadata(ds)
+        # Get future axis values
+        
         # check if normalized is required 
         if norm_ref:
             norm_tar = reduction.applyNormalization(rs, reference=norm_table[norm_ref], target=norm_tar)
@@ -388,57 +369,39 @@ def __run_script__(fns):
             rs = reduction.getBackgroundCorrected(rs, bkg, norm_table[norm_ref], norm_tar)
         # check if efficiency correction is required
         if eff:
-            ds = reduction.getEfficiencyCorrected(rs, eff)
-        # perform grouping of sequential input frames    
-        start_frames = len(ds)
-        current_frame_start = 0
-        frameno = 0
-        while frameno <= start_frames:
-            if group_val is None:
-                target_val = ""
-                final_frame = start_frames-1
-                frameno = start_frames
-            else:
-                target_val = ds[group_val][current_frame_start]
-                try:
-                    if ds[frameno][group_val] == target_val:
-                        frameno += 1
-                        continue
-                except:   #Assume an exception is due to too large frameno
-                    pass
-            # frameno is the first frame with the wrong values
-            cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
-            cs.copy_cif_metadata(ds)
-            print 'Summing frames from %d to %d, shape %s' % (current_frame_start,frameno-1,cs.shape)
-            if target_val != "":
-                print 'Corresponding to a target value of ' + `target_val`
-            # sum the input frames
-            print 'cs axes: ' + `cs.axes[0].title` + cs.axes[1].title + cs.axes[2].title
-            # es = cs.intg(axis=0)
-            es = reduction.getSummed(cs)  # does axis correction as well
-            es.copy_cif_metadata(cs)
-            print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
-            Plot1.set_dataset(es)
-            cs = reduction.getVerticalIntegrated(es, axis=0, normalization=float(vig_rescale_target.value),
-                                                     bottom = int(vig_lower_boundary.value),
-                                                     top=int(vig_upper_boundary.value))
-            if target_val != "":
-                cs.title = cs.title + "_" + str(target_val)
-            Plot2.add_dataset(cs)
-            # Output datasets
-            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
+            rs = reduction.getEfficiencyCorrected(rs, eff)
+        # Sum all frames vertically after trimming according to requirements
+        rs = rs[:,vig_lower_boundary.value:vig_upper_boundary.value,:]
+        rs = rs.intg(axis=1).get_reduced()
+        rs.copy_cif_metadata(ds)
+        # create the axes
+        units = 'Degrees'
+        try:
+            rot_values = ds[rot_info]
+        except:
+            try:
+                rot_values = SimpleData(ds.__iNXroot__.findContainerByPath(rot_info))
+            except:
+                rot_values = arange(rs.shape[1])
+                units = 'Step Number'
+        stth = ds.stth[0]
+        rs.set_axes([rot_values,stth + ds.axes[2]],['Angle','Omega'],['Degrees',units])
+        Plot1.set_dataset(rs)
+        Plot1.title = rs.title
+        Plot1.x_label = 'Angle (degrees)'
+        Plot1.y_label = 'Omega (degrees)'
+        # no output yet
+        """   filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
             if output_cif.value:
                 output.write_cif_data(cs,filename_base)
             if output_xyd.value:
                 output.write_xyd_data(cs,filename_base)
             if output_fxye.value:
                 output.write_fxye_data(cs,filename_base)
-            #loop to next group of datasets
-            current_frame_start = frameno
-            frameno += 1
+        """
             
 ''' Utility functions for plots '''
-def send_to_plot(dataset,plot,add=False,change_title=True,add_timestamp=True):
+def send_to_plot(dataset,plot,add=False,change_title='',vert_axis='',add_timestamp=True):
     """This routine appends a timestamp to the dataset title
     in order to keep uniqueness of the title for later 
     identification purposes. It also maintains plot
@@ -459,7 +422,9 @@ def send_to_plot(dataset,plot,add=False,change_title=True,add_timestamp=True):
     else:
         plot.set_dataset(dataset)
     if change_title:
-        plot.title = dataset.title
+        plot.title = change_title
+    if vert_axis:
+        plot.y_label=vert_axis
     #Update any widgets that keep a track of the plots
     if plot == Plot3:   #Delete only operates on plot 3
         curves = ['All'] + map(lambda a:a.title,plot.ds)
