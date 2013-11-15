@@ -157,7 +157,7 @@ def applyNormalization(ds, reference, target=-1):
     print 'normalized:', ds.title
     return target
 
-def getSummed(ds, applyStth=True):
+def getSummed(ds, applyStth=0.0):
     """ A faster version of Dataset.intg which discards a lot of the
     metadata handling that intg needs to do"""
     import time
@@ -191,14 +191,7 @@ def getSummed(ds, applyStth=True):
     rs.title = ds.title
 
     if applyStth:  #we check for identity
-        stth = ds.stth
-        if frame_count > 1:    
-            avestth = stth.sum()/len(stth)
-            if max(Array(map(abs,stth-avestth))) > 0.01:   #no absolute value in gumpy
-                print 'Warning: stth is changing, average angular correction applied'
-        else:
-            avestth = stth
-        rs.axes[1] += avestth
+        rs.axes[1] += applyStth
         rs.axes[1].title = 'Two theta'
 
     print 'summed frames:', frame_count

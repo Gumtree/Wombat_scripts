@@ -28,7 +28,9 @@ Group('Information').add(full_info,info_show)
 # The tuple for each key contains the location, axis label (for the plot), and
 # the value of error for display as a percentage of the measured value
 plot_choice_table = {'TC1':('/entry1/sample/tc1/sensor/sensorValueA','Temperature',2.0),
-                     'TC2':('/entry1/sample/tc1/sensor/sensorValueB','Temperature',2.0)}
+                     'TC2':('/entry1/sample/tc1/sensor/sensorValueB','Temperature',2.0),
+                     'Magnet Stick 1':('/entry1/sample/tc1/Loop2/sensor','Temperature',2.0),
+                     'Magnet Heat Exchanger':('/entry1/sample/tc1/Loop1/sensor','Temperature',2.0)}
 plot_choice = Par('string','',options=plot_choice_table.keys())
 plot_info = Act('plot_values_proc()','Plot selected values')
 Group('Plotting').add(plot_choice,plot_info)

@@ -369,6 +369,11 @@ def __run_script__(fns):
             eff = Dataset(str(eff_map.value))
     else:
         eff = None
+    # Check for rescale
+    if vig_apply_rescale.value:
+        vig_normalisation = float(vig_rescale_target.value)
+    else:
+        vig_normalisation = -1
     group_val = grouping_options[str(output_grouping.value)]
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
@@ -378,7 +383,14 @@ def __run_script__(fns):
         ds = df[fn]
         # extract basic metadata
         ds = reduction.AddCifMetadata.extract_metadata(ds)
-        rs = ds.get_reduced()
+        try:
+             stth_value = sum(ds.stth)/len(ds.stth) # save for later
+        except TypeError:
+            stth_value = ds.stth
+        if ds.ndim > 3:
+            rs = ds.get_reduced()
+        else:
+            rs = ds
         rs = rs * 1.0  #convert to float
         rs.copy_cif_metadata(ds)
         # check if normalized is required 
@@ -389,7 +401,7 @@ def __run_script__(fns):
         # check if efficiency correction is required
         if eff:
             ds = reduction.getEfficiencyCorrected(rs, eff)
-        # perform grouping of sequential input frames    
+        # perform grouping of sequential input frames   
         start_frames = len(ds)
         current_frame_start = 0
         frameno = 0
@@ -415,11 +427,11 @@ def __run_script__(fns):
             # sum the input frames
             print 'cs axes: ' + `cs.axes[0].title` + cs.axes[1].title + cs.axes[2].title
             # es = cs.intg(axis=0)
-            es = reduction.getSummed(cs)  # does axis correction as well
+            es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
             es.copy_cif_metadata(cs)
             print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
             Plot1.set_dataset(es)
-            cs = reduction.getVerticalIntegrated(es, axis=0, normalization=float(vig_rescale_target.value),
+            cs = reduction.getVerticalIntegrated(es, axis=0, normalization=vig_normalisation,
                                                      bottom = int(vig_lower_boundary.value),
                                                      top=int(vig_upper_boundary.value))
             if target_val != "":
