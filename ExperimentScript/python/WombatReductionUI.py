@@ -64,6 +64,10 @@ plh_dataset = Par('string', '', options = ['All'])
 plh_delete  = Act('plh_delete_proc()', 'Delete')
 Group('Delete 1D Datasets').add(plh_plot, plh_dataset, plh_delete)
 
+# Plot settings
+ps_plotname = Par('string','Plot 2',options=['Plot 2','Plot 3'])
+ps_dspacing = Par('bool',False,command='dspacing_change()')
+Group('Plot settings').add(ps_plotname,ps_dspacing)
 
 ''' Load Preferences '''
 

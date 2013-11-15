@@ -54,6 +54,20 @@ def extract_metadata(rawfile):
     # get the date
     date_form = datetime.datetime.strptime(str(rawfile['$entry/start_time']),"%Y-%m-%d %H:%M:%S")
     # TODO: use presence/absence of mf2 to determine monochromator and hence, wavelength
+    mf2val = average_metadata(rawfile['$entry/instrument/monochromator/mf2'])
+    if mf2val > 5.0:   #small mono gives dodgy number around 8
+        monotype = '335'
+    else:
+        monotype = '115'
+    hklval = pick_hkl(mom - tk_angle/2.0,monotype)
+    if len(hklval)==3:      # i.e. h,k,l found
+        rawfile.add_metadata("_pd_instr_monochr_pre_spec",
+                  hklval + " reflection from Ge crystal, "+monotype+" cut",tag="CIF")
+        wavelength = calc_wavelength(hklval,tk_angle)
+        rawfile.add_metadata("_diffrn_radiation_wavelength","%.3f" % wavelength,tag="CIF")
+        rawfile.add_metadata("_[local]_diffrn_radiation_wavelength_determination",
+                  "Wavelength is calculated from monochromator hkl and takeoff angle and is therefore approximate",
+                  tag="CIF")
     rawfile.add_metadata("_computing_data_collection",str(rawfile["$entry/program_name"]) + " " + \
                          str(rawfile["$entry/sics_release"]),"CIF")
     rawfile.add_metadata("_computing_data_reduction", "Gumtree Echidna/Python routines","CIF")
@@ -99,10 +113,10 @@ def pick_hkl(offset,monotype):
     """A simple routine to guess the monochromator hkl angle. The
     offset values can be found by taking the dot product of the 335
     with the hkl values """
-    if monotype == "115": return monotype
-    offset_table = {"004":40.31,"113":15.08,"115":24.52,"117":28.89,
-                    "224":5.05,"228":20.84,"331":36.42,"333":14.42,
-                    "337":9.096,"335":0.0}
-    best = filter(lambda a:abs(abs(offset) - offset_table[a])<2.5,offset_table.keys())
+    if monotype == "335": return monotype
+    if monotype == "115":
+        offset_table = {"111":38.94,"113":9.45,"115":0.0,"117":4.37,"119":6.86,
+                    "331":60.94,"335":24.52,"337":15.43,"551":66.16}
+    best = filter(lambda a:abs(abs(offset) - offset_table[a])<1.5,offset_table.keys())
     if len(best)>1 or len(best)==0: return "Unknown"
     return best[0]
