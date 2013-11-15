@@ -440,7 +440,7 @@ def __run_script__(fns):
                                                      top=int(vig_upper_boundary.value))
             if target_val != "":
                 cs.title = cs.title + "_" + str(target_val)
-            Plot2.add_dataset(cs)
+            send_to_plot(cs,Plot2,add=True)
             # Output datasets
             filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
             if output_cif.value:

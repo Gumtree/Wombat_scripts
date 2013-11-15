@@ -279,7 +279,11 @@ def getVerticalIntegrated(ds, okMap=None, normalization=-1, axis=1,top=None,bott
         else:
             new_axes.append(totals.axes[i])
         print 'Axis %d: %s' % (i,totals.axes[i].title)
-    totals.set_axes(new_axes)
+    old_names = map(lambda a:a.name,totals.axes)
+    old_units = map(lambda a:a.units,totals.axes)
+    old_names[-1] = 'Two theta'
+    old_units[-1] = 'Degrees'
+    totals.set_axes(new_axes,anames=old_names,aunits=old_units)
     return totals
 
 
