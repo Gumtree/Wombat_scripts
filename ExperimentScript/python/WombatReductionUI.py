@@ -324,7 +324,8 @@ def __run_script__(fns):
         print 'no input datasets'
         return
 
-
+    # set the title for Plot2
+    Plot2.title = 'Plot 2'
     # check if input needs to be normalized
     if norm_apply.value:
         # norm_ref is the source of information for normalisation
@@ -403,8 +404,11 @@ def __run_script__(fns):
         if bkg:
             rs = reduction.getBackgroundCorrected(rs, bkg, norm_table[norm_ref], norm_tar)
         # check if efficiency correction is required
+        assert rs.dtype == Array([1.2,1.3]).dtype
         if eff:
             ds = reduction.getEfficiencyCorrected(rs, eff)
+        else:
+            ds = rs
         # perform grouping of sequential input frames   
         start_frames = len(ds)
         current_frame_start = 0
@@ -429,7 +433,7 @@ def __run_script__(fns):
             if target_val != "":
                 print 'Corresponding to a target value of ' + `target_val`
             # sum the input frames
-            print 'cs axes: ' + `cs.axes[0].title` + cs.axes[1].title + cs.axes[2].title
+            print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
             # es = cs.intg(axis=0)
             es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
             es.copy_cif_metadata(cs)
@@ -440,7 +444,7 @@ def __run_script__(fns):
                                                      top=int(vig_upper_boundary.value))
             if target_val != "":
                 cs.title = cs.title + "_" + str(target_val)
-            send_to_plot(cs,Plot2,add=True)
+            send_to_plot(cs,Plot2,add=True,change_title=False)
             # Output datasets
             filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
             if output_cif.value:

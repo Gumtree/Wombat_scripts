@@ -10,7 +10,12 @@ __datasource__ = __register__.getDataSourceViewer()
 
 # Axis setup
 # possible rotation axes
-rot_table = {'Sample rotation':'/entry1/sample/som','Sample stage':'/entry1/sample/rotate'}
+rot_table = {'Sample rotation':('/entry1/sample/som','Omega','Degrees'),
+             'Sample stage':('/entry1/sample/rotate','Omega','Degrees'),
+             'Magnet temperature (HE)':('/entry1/sample/tc1/Loop1/sensor',
+                                            'Temperature','Kelvin'),
+             'Sample temperature (Magnet stick 1)':('/entry1/sample/tc1/Loop2/sensor',
+                                            'Temperature','Kelvin')}
 rot_axis = Par('string','Magnet rotation',options = rot_table.keys())
 Group('Axis setup').add(rot_axis)
 # Normalization
@@ -300,7 +305,7 @@ def __run_script__(fns):
         return
 
     # Store vertical axis information
-    rot_info = rot_table[str(rot_axis.value)]
+    rot_info = rot_table[str(rot_axis.value)][0]
     # check if input needs to be normalized
     if norm_apply.value:
         # norm_ref is the source of information for normalisation
@@ -375,7 +380,7 @@ def __run_script__(fns):
         rs = rs.intg(axis=1).get_reduced()
         rs.copy_cif_metadata(ds)
         # create the axes
-        units = 'Degrees'
+        units = rot_table[str(rot_axis.value)][2]
         try:
             rot_values = ds[rot_info]
         except:
@@ -385,11 +390,12 @@ def __run_script__(fns):
                 rot_values = arange(rs.shape[1])
                 units = 'Step Number'
         stth = ds.stth[0]
-        rs.set_axes([rot_values,stth + ds.axes[2]],['Angle','Omega'],['Degrees',units])
+        vert_axis_name = rot_table[str(rot_axis.value)][1]
+        rs.set_axes([rot_values,stth + ds.axes[2]],['Angle',vert_axis_name],['Degrees',units])
         Plot1.set_dataset(rs)
         Plot1.title = rs.title
         Plot1.x_label = 'Angle (degrees)'
-        Plot1.y_label = 'Omega (degrees)'
+        Plot1.y_label = vert_axis_name + ' (' + units + ')'
         # no output yet
         """   filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
             if output_cif.value:

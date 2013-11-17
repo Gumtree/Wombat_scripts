@@ -177,7 +177,6 @@ def getSummed(ds, applyStth=0.0):
     else:
         base_data = zeros_like(ds.storage[0])
         base_var = zeros_like(ds.storage[0])
-        
         for frame in xrange(0, frame_count):
             base_data          += ds.storage[frame]
             base_var           += ds.var[frame]
@@ -196,6 +195,7 @@ def getSummed(ds, applyStth=0.0):
 
     print 'summed frames:', frame_count
     rs.copy_cif_metadata(ds)
+    print 'Output dtype' + `rs.dtype`
     return rs
 
 
@@ -223,39 +223,40 @@ def get_collapsed(ds):
     print 'Collapsing axis 0:' + `ds.shape` + '-> ' + `rs.shape`
     return rs
     
-def getVerticalIntegrated(ds, okMap=None, normalization=-1, axis=1,top=None,bottom=None):
+def getVerticalIntegrated(ds, okmap=None, normalization=-1, axis=1,top=None,bottom=None):
     print 'vertical integration of', ds.title
     start_dim = ds.ndim
 
-    if (okMap is not None) and (okMap.ndim != 2):
+    if (okmap is not None) and (okmap.ndim != 2):
         raise AttributeError('okMap.ndim != 2')
 
     # check shape
-    if (okMap is not None) and (ds.shape != okMap.shape):
+    if (okmap is not None) and (ds.shape != okmap.shape):
         raise AttributeError('ds.shape != okMap.shape')    
 
+    if okmap is None:
+        okmap = ones(ds.shape,dtype=int)
     # JRH strategy: we need to sum vertically, accumulating individual pixel
     # errors as we go, and counting the contributions.
     #
     # The okmap should give us contributions by summing vertically
-    # Note that we are assuming at least 0.1 count in every valid pixel
+    # Note that we are assuming all observed counts are positive
     
     import time
     if bottom is None or bottom < 0: bottom = 0
     if top is None or top >= ds.shape[0]: top = ds.shape[0]-1
     working_slice = ds[bottom:top,:]
     totals = working_slice.intg(axis=axis)
-    contrib_map = zeros(working_slice.shape,dtype=int)
-    contrib_map[working_slice>0.1] = 1
-    contribs = contrib_map.intg(axis=axis)
+    contribs = okmap.intg(axis=axis)
     #
     # We have now reduced the scale of the problem by 100
     #
     # Normalise to the maximum number of contributors
     print 'Axes labels:' + `ds.axes[0].title` + ' ' + `ds.axes[1].title`
     max_contribs = float(contribs.max())
+    min_contribs = float(contribs.min())
     #
-    print 'Maximum no of contributors %f' % max_contribs
+    print 'Maximum/minimum no of contributors %f/%f' % (max_contribs,min_contribs)
     contribs = contribs/max_contribs  #
     save_var = totals.var
     totals = totals / contribs        #Any way to avoid error propagation here?
