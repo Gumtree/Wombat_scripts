@@ -3,16 +3,14 @@
 # is analogous to the AddMetadata routine in the old Java code.  We store the
 # metadata in the file itself, but in a place that we know is preserved on copy.
 
-# The information added in this file is instrument-specific.
-
 from Formats.CifFile import CifBlock
 
 fixed_table = {
-"_pd_instr_geometry": 	"Cylindrical gas-filled wire-array detector centred on " +
-	    		"sample illuminated by monochromatic neutrons with optional oscillating" +
-	    		"collimator in front of detector.",
+"_pd_instr_geometry":         "Cylindrical gas-filled wire-array detector centred on " +
+                         "sample illuminated by monochromatic neutrons with optional oscillating" +
+                         "collimator in front of detector.",
 "_pd_instr_location": "Wombat High Intensity Powder Diffractometer at " +
-	    		" OPAL facility, Bragg Institute, Australia"
+                         " OPAL facility, Bragg Institute, Australia"
 }
 
 def add_metadata_methods(rawfile):
@@ -36,11 +34,7 @@ def add_metadata_methods(rawfile):
             metadata_store[key] = value
 
     def h(self,tag):
-        try:
-            return self.__dict__['ms']
-        except KeyError:
-            print 'Warning: metadata dictionary has been lost'
-            return {}
+        return self.__dict__['ms']
 
     def c(self,old):
         try:
@@ -59,25 +53,43 @@ def add_metadata_methods(rawfile):
         rawfile.__class__.__dict__['copy_cif_metadata'] = c
 
     rawfile.__dict__['ms'] = CifBlock()
-    
-def extract_metadata(rawfile):
-    import datetime
-    add_metadata_methods(rawfile)
+
+def add_standard_metadata(dataset):
+    add_metadata_methods(dataset)
     for key,val in fixed_table.items():
-        rawfile.add_metadata(key,val,tag="CIF")
+        dataset.add_metadata(key,val,tag="CIF")
+    dataset.add_metadata("_computing_data_reduction", "Gumtree Wombat/Python routines","CIF")
+    dataset.add_metadata("_diffrn_radiation_probe", "neutron","CIF")
+
+def extract_metadata(rawfile):
+    """This transfers NeXuS metadata to CIF metadata"""
+    import datetime
+    add_standard_metadata(rawfile)
     # get monochromator-related information
     mom = average_metadata(rawfile['$entry/instrument/crystal/rotate'])
     tk_angle = average_metadata(rawfile['$entry/instrument/crystal/takeoff_angle'])
     # get the date
     date_form = datetime.datetime.strptime(str(rawfile['$entry/start_time']),"%Y-%m-%d %H:%M:%S")
-    # TODO: track monochromator installation information, otherwise we have to guess between
-    # the small 335 and the large 115 with multiple takeoff angles
-    # These values were in the CIF writing area of the Java routines, best put here
+    # TODO: use presence/absence of mf2 to determine monochromator and hence, wavelength
+    mf2val = average_metadata(rawfile['$entry/instrument/monochromator/mf2'])
+    if mf2val > 1.0:   #small mono gives dodgy number around 8
+        monotype = '335'
+    else:
+        monotype = '115'
+    hklval = pick_hkl(mom - tk_angle/2.0,monotype)
+    if len(hklval)==3:      # i.e. h,k,l found
+        rawfile.add_metadata("_pd_instr_monochr_pre_spec",
+                  hklval + " reflection from Ge crystal, "+monotype+" cut",tag="CIF")
+        wavelength = calc_wavelength(hklval,tk_angle)
+        rawfile.add_metadata("_diffrn_radiation_wavelength","%.3f" % wavelength,tag="CIF")
+        rawfile.add_metadata("_[local]_diffrn_radiation_wavelength_determination",
+                  "Wavelength is calculated from monochromator hkl and takeoff angle and is therefore approximate",
+                  tag="CIF")
     rawfile.add_metadata("_computing_data_collection",str(rawfile["$entry/program_name"]) + " " + \
                          str(rawfile["$entry/sics_release"]),"CIF")
     rawfile.add_metadata("_computing_data_reduction", "Gumtree Wombat/Python routines","CIF")
     rawfile.add_metadata("_pd_spec_special_details",sanitize(str(rawfile["$entry/sample/name"])),"CIF")
-    rawfile.add_metadata("_[local]_sample_description",sanitize(str(rawfile["$entry/sample/description"])),"CIF")
+    rawfile.add_metadata("_[local]_data_collection_description",str(rawfile["$entry/sample/description"]),"CIF")
     start_time = str(rawfile["$entry/start_time"]).replace(" ","T")
     end_time = str(rawfile["$entry/end_time"]).replace(" ","T")
     rawfile.add_metadata("_pd_meas_datetime_initiated", start_time,"CIF")
@@ -89,10 +101,16 @@ def extract_metadata(rawfile):
     rawfile.add_metadata("_pd_meas_info_author_name", sanitize(username),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_email", str(rawfile[ "$entry/user/email"]),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_phone", str(rawfile[ "$entry/user/phone"]),"CIF")
+    rawfile.add_metadata("_pd_instr_2theta_monochr_pre","%.3f" % tk_angle,"CIF")
     rawfile.add_metadata("_pd_instr_dist_spec/detc","%.1f" % average_metadata(rawfile["$entry/instrument/detector/radius"]),"CIF")
     rawfile.add_metadata("_diffrn_source_power", "%.2f" % (average_metadata(rawfile["$entry/instrument/source/power"])*1000),"CIF")
-    rawfile.add_metadata("_diffrn_radiation_probe", "neutron","CIF")
     return rawfile
+
+def store_reduction_preferences(rawfile,prof_names,prof_values):
+    """Store the preferences for all parameters used in data reduction"""
+    names = (('_[local]_proc_reduction_parameter',
+                                       '_[local]_proc_reduction_value'),)
+    rawfile.__dict__['ms'].AddCifItem((names,((prof_names,prof_values),)))
 
 def average_metadata(entrytable):
     try:
@@ -112,11 +130,11 @@ def pick_hkl(offset,monotype):
     """A simple routine to guess the monochromator hkl angle. The
     offset values can be found by taking the dot product of the 335
     with the hkl values """
-    if monotype == "115": return monotype
-    offset_table = {"004":40.31,"113":15.08,"115":24.52,"117":28.89,
-                    "224":5.05,"228":20.84,"331":36.42,"333":14.42,
-                    "337":9.096,"335":0.0}
-    best = filter(lambda a:abs(abs(offset) - offset_table[a])<2.5,offset_table.keys())
+    if monotype == "335": return monotype
+    if monotype == "115":
+        offset_table = {"111":38.94,"113":9.45,"115":0.0,"117":4.37,"119":6.86,
+                    "331":60.94,"335":24.52,"337":15.43,"551":66.16}
+    best = filter(lambda a:abs(abs(offset) - offset_table[a])<1.5,offset_table.keys())
     if len(best)>1 or len(best)==0: return "Unknown"
     return best[0]
 

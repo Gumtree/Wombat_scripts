@@ -81,7 +81,9 @@ def applyNormalization(ds, reference, target=-1):
        target is the target value to which they will be adjusted.  If target is not specified, the maximum value of
        the reference array is used and reported for further use. The variance of the values in the reference array
        is assumed to follow counting statistics.  We modify the input dataset rather than creating a new dataset
-       as files on Wombat are so large."""
+       as files on Wombat are so large. We need to make sure that the
+       input dataset is converted to float, otherwise the multiplcation
+       will be integer."""
     print 'normalization of', ds.title
     # Store reference name for later
     refname = str(reference)
@@ -155,11 +157,9 @@ def applyNormalization(ds, reference, target=-1):
         print info_string
     ds.add_metadata('_pd_proc_info_data_reduction',info_string, tag="CIF",append=True)
     print 'normalized:', ds.title
-    # finalize result
-    ds.title += '-(N)'
     return target
 
-def getSummed(ds, applyStth=True):
+def getSummed(ds, applyStth=0.0):
     """ A faster version of Dataset.intg which discards a lot of the
     metadata handling that intg needs to do"""
     import time
@@ -177,9 +177,8 @@ def getSummed(ds, applyStth=True):
     if frame_count == 1:
         rs = ds.get_reduced()
     else:
-        base_data = array.zeroes_like(ds.storage[0])
-        base_var = array.zeroes_like(ds.storage[0])
-        
+        base_data = zeros_like(ds.storage[0])
+        base_var = zeros_like(ds.storage[0])
         for frame in xrange(0, frame_count):
             base_data          += ds.storage[frame]
             base_var           += ds.var[frame]
@@ -190,21 +189,15 @@ def getSummed(ds, applyStth=True):
         rs.axes[1] = ds.axes[2]
         rs.axes[0] = ds.axes[1]
 
-    rs.title = ds.title + ' (Summed)'
+    rs.title = ds.title
 
     if applyStth:  #we check for identity
-        stth = ds.stth
-        if frame_count > 1:    
-            avestth = stth.sum()/len(stth)
-            if max(Array(map(abs,stth-avestth))) > 0.01:   #no absolute value in gumpy
-                print 'Warning: stth is changing, average angular correction applied'
-        else:
-            avestth = stth
-        rs.axes[1] += avestth
+        rs.axes[1] += applyStth
         rs.axes[1].title = 'Two theta'
-        rs.stth    = 0
 
     print 'summed frames:', frame_count
+    rs.copy_cif_metadata(ds)
+    print 'Output dtype' + `rs.dtype`
     return rs
 
 
@@ -232,53 +225,54 @@ def get_collapsed(ds):
     print 'Collapsing axis 0:' + `ds.shape` + '-> ' + `rs.shape`
     return rs
     
-def getVerticalIntegrated(ds, okMap=None, normalization=-1, axis=1,top=None,bottom=None):
+def getVerticalIntegrated(ds, okmap=None, normalization=-1, axis=1,top=None,bottom=None):
     print 'vertical integration of', ds.title
     start_dim = ds.ndim
 
-    if (okMap is not None) and (okMap.ndim != 2):
+    if (okmap is not None) and (okmap.ndim != 2):
         raise AttributeError('okMap.ndim != 2')
 
     # check shape
-    if (okMap is not None) and (ds.shape != okMap.shape):
+    if (okmap is not None) and (ds.shape != okmap.shape):
         raise AttributeError('ds.shape != okMap.shape')    
 
+    if okmap is None:
+        okmap = ones(ds.shape,dtype=int)
     # JRH strategy: we need to sum vertically, accumulating individual pixel
     # errors as we go, and counting the contributions.
     #
     # The okmap should give us contributions by summing vertically
-    # Note that we are assuming at least 0.1 count in every valid pixel
+    # Note that we are assuming all observed counts are positive
     
     import time
     if bottom is None or bottom < 0: bottom = 0
     if top is None or top >= ds.shape[0]: top = ds.shape[0]-1
     working_slice = ds[bottom:top,:]
     totals = working_slice.intg(axis=axis)
-    contrib_map = zeros(working_slice.shape,dtype=int)
-    contrib_map[working_slice>0.1] = 1
-    contribs = contrib_map.intg(axis=axis)
+    contribs = okmap.intg(axis=axis)
     #
     # We have now reduced the scale of the problem by 100
     #
     # Normalise to the maximum number of contributors
     print 'Axes labels:' + `ds.axes[0].title` + ' ' + `ds.axes[1].title`
     max_contribs = float(contribs.max())
+    min_contribs = float(contribs.min())
     #
-    print 'Maximum no of contributors %f' % max_contribs
+    print 'Maximum/minimum no of contributors %f/%f' % (max_contribs,min_contribs)
     contribs = contribs/max_contribs  #
     save_var = totals.var
     totals = totals / contribs        #Any way to avoid error propagation here?
     totals.var = save_var/contribs
 
     # finalize result
-    totals.title = ds.title + ' (Summed from %d to %d)' % (bottom,top)
+    totals.title = ds.title
     totals.copy_cif_metadata(ds)
     info_string = "Data were vertically integrated from pixels %d to %d (maximum number of contributors %d)." % (bottom,top,max_contribs)
     
     # normalize result if required
     if normalization > 0:
         totals *= (float(normalization) / totals.max())
-        totals.title = totals.title + ' (x %5.2f)' % (float(normalization)/totals.max())
+        totals.title = totals.title
         info_string += "The maximum intensity was then normalised to %f counts." % float(normalization)
     # check if any axis needs to be converted from boundaries to centers
     new_axes = []
@@ -288,7 +282,11 @@ def getVerticalIntegrated(ds, okMap=None, normalization=-1, axis=1,top=None,bott
         else:
             new_axes.append(totals.axes[i])
         print 'Axis %d: %s' % (i,totals.axes[i].title)
-    totals.set_axes(new_axes)
+    old_names = map(lambda a:a.name,totals.axes)
+    old_units = map(lambda a:a.units,totals.axes)
+    old_names[-1] = 'Two theta'
+    old_units[-1] = 'Degrees'
+    totals.set_axes(new_axes,anames=old_names,aunits=old_units)
     return totals
 
 
@@ -404,7 +402,7 @@ def getBackgroundCorrected(ds, bkg, norm_ref=None, norm_target=-1):
     else:
         raise AttributeError('ds.ndim != 2 or 3')
     # finalize result
-    rs.title = ds.title + ' (B)'
+    rs.title = ds.title
     info_string = 'Background subtracted using %s' % str(bkg.title)
     if norm_ref:
         info_string += 'after normalising to %f using monitor %s.' % (norm_target,norm_ref)
@@ -438,15 +436,43 @@ def getEfficiencyCorrected(ds, eff):
             raise AttributeError('ds.shape[1:] != eff.shape')
 
         # result
-        rs = ds.__copy__()
+        rs = zeros(ds.shape,dtype='float') #otherwise might be int array
         for frame in xrange(ds.shape[0]):
-            rs[frame] *= eff
-
+            rs[frame] = ds[frame] * eff
         print 'efficiency corrected frames:', rs.shape[0]
-
+        rs.axes = ds.axes
     else:
         raise AttributeError('ds.ndim != 2 or 3')
-    rs.title = ds.title + ' (Eff)'
+    rs.title = ds.title
     rs.copy_cif_metadata(ds)
     # now include all the efficiency file metadata, except data reduction
     return rs
+
+def convert_to_dspacing(ds):
+    if ds.axes[0].name == 'd-spacing':
+        return
+    try:
+        wavelength = float(ds.harvest_metadata("CIF")["_diffrn_radiation_wavelength"])
+        print 'Wavelength for %s is %f' % (ds.title,wavelength)
+    except KeyError:
+        print 'Unable to find a wavelength, no conversion attempted'
+        return   #Unable to convert anything
+    # Funny call of sin below to avoid problems with sin being shadowed by the
+    # standard maths library
+    new_axis = wavelength/(2.0*(ds.axes[0]*3.14159/360.0).__sin__())
+    ds.set_axes([new_axis],anames=['d-spacing'],aunits=['Angstroms'])
+    return 'Changed'
+
+def convert_to_twotheta(ds):
+    if ds.axes[0].name == 'Two theta':
+        return
+    try:
+        wavelength = float(ds.harvest_metadata("CIF")["_diffrn_radiation_wavelength"])
+    except KeyError:
+        print 'Unable to find a wavelength, no conversion attempted'
+        return   #Unable to convert anything
+    print 'Wavelength for %s is %f' % (ds.title,wavelength)
+    new_axis = arcsin(wavelength/(2.0*ds.axes[0]))*360/3.14159
+    ds.set_axes([new_axis],anames=['Two theta'],aunits=['Degrees'])
+    return 'Changed'
+
