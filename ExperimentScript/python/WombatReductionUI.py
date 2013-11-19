@@ -11,13 +11,19 @@ __datasource__ = __register__.getDataSourceViewer()
 # Output Folder
 out_folder = Par('file')
 out_folder.dtype = 'folder'
+out_folder.title = 'Directory'
 output_xyd = Par('bool','True')
+output_xyd.title = 'XYD'
 output_cif = Par('bool','True')
+output_cif.title = 'pdCIF'
 output_fxye = Par('bool','False')
+output_fxye.title = 'GSAS FXYE'
 output_stem = Par('string','reduced_')
+output_stem.title = 'Append to filename'
 grouping_options = {"Frame":"run_number","TC1 setpoint":"tc1","None":None}
 output_grouping = Par('string','None',options=grouping_options.keys())
-Group('Output Folder').add(output_xyd,output_cif,output_fxye,output_stem,out_folder,
+output_grouping.title = 'Split frames'
+Group('Output File').add(output_xyd,output_cif,output_fxye,output_stem,out_folder,
                            output_grouping)
 
 # Normalization
@@ -25,6 +31,7 @@ Group('Output Folder').add(output_xyd,output_cif,output_fxye,output_stem,out_fol
 norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts'
               ,'Detector time':'detector_time'}
 norm_apply     = Par('bool', 'True')
+norm_apply.title = 'Apply'
 norm_reference = Par('string', 'Monitor 3', options = norm_table.keys())
 norm_reference.title = 'Source'
 norm_target    = 'auto'
@@ -34,39 +41,53 @@ Group('Normalization').add(norm_apply, norm_reference,norm_plot_all,norm_plot)
 
 # Background Correction
 bkg_apply = Par('bool', 'False')
+bkg_apply.title = 'Apply'
 bkg_map   = Par('file', '')
 bkg_map.ext = '*.hdf'
+bkg_map.title = 'Background file'
 bkg_show  = Act('bkg_show_proc()', 'Show') 
 Group('Background Correction').add(bkg_apply, bkg_map, bkg_show)
 
 # Efficiency Correction
 eff_apply = Par('bool', 'True')
+eff_apply.title = 'Apply'
 eff_map   = Par('file', '')
 eff_map.ext = '*.*'
+eff_map.title = 'Efficiency File'
 eff_show  = Act('eff_show_proc()', 'Show') 
 Group('Efficiency Correction').add(eff_apply, eff_map, eff_show)
 
 # Vertical Integration
 vig_lower_boundary = Par('int', '0')
+vig_lower_boundary.title = 'Lower limit'
 vig_upper_boundary = Par('int', '127')
+vig_upper_boundary.title = 'Upper limit'
 vig_apply_rescale  = Par('bool', 'True')
+vig_apply_rescale.title = 'Rescale'
 vig_rescale_target = Par('float', '10000.0')
+vig_rescale_target.title = 'Rescale to:'
 Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target)
 
 # Plot Helper
 plh_from = Par('string', 'Plot 2', options = ['Plot 1', 'Plot 2', 'Plot 3'])
+plh_from.title = 'From'
 plh_to   = Par('string', 'Plot 3', options = ['Plot 1', 'Plot 2', 'Plot 3'])
+plh_to.title= 'To'
 plh_copy = Act('plh_copy_proc()', 'Copy')
 Group('Copy 1D Datasets').add(plh_from, plh_to, plh_copy)
 
 plh_plot    = Par('string', '', options = ['Plot 1', 'Plot 2', 'Plot 3'], command = 'plh_plot_changed()')
+plh_plot.title = 'Plot Name'
 plh_dataset = Par('string', '', options = ['All'])
+plh_dataset.title = 'Dataset'
 plh_delete  = Act('plh_delete_proc()', 'Delete')
 Group('Delete 1D Datasets').add(plh_plot, plh_dataset, plh_delete)
 
 # Plot settings
 ps_plotname = Par('string','Plot 2',options=['Plot 2','Plot 3'])
+ps_plotname.title = 'Plot Name'
 ps_dspacing = Par('bool',False,command='dspacing_change()')
+ps_dspacing.title = 'd spacing'
 Group('Plot settings').add(ps_plotname,ps_dspacing)
 
 ''' Load Preferences '''
