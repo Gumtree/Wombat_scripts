@@ -76,8 +76,8 @@ def extract_metadata(rawfile):
     rawfile.add_metadata("_computing_data_collection",str(rawfile["$entry/program_name"]) + " " + \
                          str(rawfile["$entry/sics_release"]),"CIF")
     rawfile.add_metadata("_computing_data_reduction", "Gumtree Wombat/Python routines","CIF")
-    rawfile.add_metadata("_pd_spec_special_details",str(rawfile["$entry/sample/name"]),"CIF")
-    rawfile.add_metadata("_[local]_sample_description",str(rawfile["$entry/sample/description"]),"CIF")
+    rawfile.add_metadata("_pd_spec_special_details",sanitize(str(rawfile["$entry/sample/name"])),"CIF")
+    rawfile.add_metadata("_[local]_sample_description",sanitize(str(rawfile["$entry/sample/description"])),"CIF")
     start_time = str(rawfile["$entry/start_time"]).replace(" ","T")
     end_time = str(rawfile["$entry/end_time"]).replace(" ","T")
     rawfile.add_metadata("_pd_meas_datetime_initiated", start_time,"CIF")
@@ -86,7 +86,7 @@ def extract_metadata(rawfile):
         username = str(rawfile["user_name"])
     except:
         username = "?"
-    rawfile.add_metadata("_pd_meas_info_author_name", username,"CIF")
+    rawfile.add_metadata("_pd_meas_info_author_name", sanitize(username),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_email", str(rawfile[ "$entry/user/email"]),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_phone", str(rawfile[ "$entry/user/phone"]),"CIF")
     rawfile.add_metadata("_pd_instr_dist_spec/detc","%.1f" % average_metadata(rawfile["$entry/instrument/detector/radius"]),"CIF")
@@ -119,3 +119,7 @@ def pick_hkl(offset,monotype):
     best = filter(lambda a:abs(abs(offset) - offset_table[a])<2.5,offset_table.keys())
     if len(best)>1 or len(best)==0: return "Unknown"
     return best[0]
+
+def sanitize(instring):
+    """Translate non-allowed characters in user-supplied strings"""
+    outstring = instring.encode('ascii','replace')

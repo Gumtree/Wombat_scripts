@@ -369,45 +369,32 @@ def getBackgroundCorrected(ds, bkg, norm_ref=None, norm_target=-1):
     # normalise
     if norm_ref:
             applyNormalization(bkg,norm_ref,norm_target)
-
-    if ds.ndim == 2:
+    if ds.ndim == bkg.ndim:
         # check shape
         if ds.shape != bkg.shape:
             raise AttributeError('ds.shape != bkg.shape')
 
         # result
         rs = ds - bkg
+        rs.copy_cif_metadata(ds)
 
         # ensure that result doesn't contain negative pixels
         rs[rs < 0] = 0
 
         print 'background corrected frames:', 1
 
-    elif ds.ndim == 3:
+    elif ds.ndim == 3 and bkg.ndim == 2:
         # check arguments
-        if ds.axes[0].title != 'azimuthal_angle':
-            raise AttributeError('ds.axes[0].title != azimuthal_angle')
-
-        if bkg.ndim == 3:
-            if bkg.axes[0].title != 'azimuthal_angle':
-                raise AttributeError('bkg.axes[0].title != azimuthal_angle')
-            if ds.shape != bkg.shape:
-                raise AttributeError('ds.shape != bkg.shape')
-        else:
-            if ds.shape[1:] != bkg.shape:
-                raise AttributeError('ds.shape[1:] != bkg.shape')
+        if ds.axes[0].title != 'run_number':
+            raise AttributeError('ds.axes[0].title != run_number')
+        if ds.shape[1:] != bkg.shape:
+            raise AttributeError('ds.shape[1:] != bkg.shape')
 
         # result
         rs = ds.__copy__()
-        if bkg.ndim == 3:
-            # subtract each bkg-frame from each rs-frame
-            # can't we do this straight out?
-            # for frame in xrange(ds.shape[0]):
-            #    rs[frame, 0] -= bkg[frame, 0]
-            rs = ds - bkg     # test this
-        else:
-            for frame in xrange(ds.shape[0]):
-                rs[frame, 0] -= bkg
+        rs.copy_cif_metadata(ds)
+        for frame in xrange(ds.shape[0]):
+            rs[frame, 0] -= bkg
 
         # ensure that result doesn't contain negative pixels
         rs[rs < 0] = 0

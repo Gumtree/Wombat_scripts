@@ -96,7 +96,6 @@ class BackgroundTestCase(unittest.TestCase):
     def testNormBack(self):
         """Test that normalisation is correctly performed"""
         rs = reduction.getBackgroundCorrected(self.test_array,self.back_array,norm_ref='bm1_counts',norm_target=5.0)
-        print rs.storage
         self.assertEqual(rs.storage[0][0][0] , self.core_array2[0][0]-self.back_vals[0][0]/2)
         self.assertEqual(rs.storage[1][1][1] , self.core_array2[1][1]-self.back_vals[1][1]*1.25)
         self.assertEqual(rs.storage[2][1][1] , self.core_array2[1][1]-self.back_array[1][1]/2)
