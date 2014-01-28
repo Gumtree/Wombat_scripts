@@ -68,8 +68,13 @@ def extract_metadata(rawfile):
         rawfile.add_metadata("_[local]_diffrn_radiation_wavelength_determination",
                   "Wavelength is calculated from monochromator hkl and takeoff angle and is therefore approximate",
                   tag="CIF")
-    rawfile.add_metadata("_computing_data_collection",str(rawfile["$entry/program_name"]) + " " + \
-                         str(rawfile["$entry/sics_release"]),"CIF")
+    program_name = str(rawfile["$entry/program_name"])
+    try:
+        program_name = program_name + ' Revision:'+ str(rawfile["$entry/program_revision"]) + \
+        " Branch: " + str(rawfile["$entry/program_branch"])
+    except AttributeError:
+        pass
+    rawfile.add_metadata("_computing_data_collection",program_name,"CIF")
     rawfile.add_metadata("_computing_data_reduction", "Gumtree Echidna/Python routines","CIF")
     rawfile.add_metadata("_pd_spec_special_details",str(rawfile["$entry/sample/name"]),"CIF")
     rawfile.add_metadata("_[local]_data_collection_description",str(rawfile["$entry/sample/description"]),"CIF")
