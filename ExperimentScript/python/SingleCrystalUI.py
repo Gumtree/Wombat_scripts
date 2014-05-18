@@ -253,7 +253,7 @@ def load_user_prefs(prefix = ''):
     # Run through our parameters, looking for the corresponding
     # preferences
     g = globals()
-    p = g.scope_keys()
+    p = g.keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
             try:
@@ -272,7 +272,7 @@ def save_user_prefs(prefix=''):
     prof_vals = []
     # sneaky way to get all the preferences
     g = globals()
-    p = g.scope_keys()
+    p = g.keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
             print `name`
