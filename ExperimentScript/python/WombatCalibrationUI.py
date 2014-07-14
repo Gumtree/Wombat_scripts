@@ -5,7 +5,6 @@ __script__.version   = '1.0'
 ''' User Interface '''
 
 from datetime import date
-today = date.today()
 
 # Input
 in_van_run  = Par('file', '')
@@ -27,12 +26,12 @@ norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts',
               'Monitor 3':'bm3_counts','Detector time':'detector_time'}
 
 norm_apply     = Par('bool'  , 'True'      )
-norm_reference = Par('string', 'bm1 counts', options = norm_table.keys())
+norm_reference = Par('string', 'Monitor 1', options = norm_table.keys())
 Group('Normalization').add(norm_apply, norm_reference)
 
 # Efficiency Correction Map
 eff_make = Par('bool'  , 'True')
-eff_name = Par('string', today.strftime("eff_%Y_%m_%d.cif"))
+eff_name = Par('string', date.today().strftime("eff_%Y_%m_%d.cif"))
 eff_std_range      = Par('float' , '1.8' )
 Group('Efficiency Correction Map').add(eff_make, eff_name, eff_std_range)
 
