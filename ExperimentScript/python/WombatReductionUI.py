@@ -440,9 +440,12 @@ def __run_script__(fns):
              stem = stem.replace('%s',name_front)
         if '%t1' in stem:
              # get tc1
-             temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueB"]
+             temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"]
              print `temperature`
-             avetemp = sum(temperature)/len(temperature)
+             try:
+                 avetemp = sum(temperature)/len(temperature)
+             except TypeError:
+                 avetemp = temperature
              stem = stem.replace('%t1',"%.0fK" % avetemp)
         print 'Filename stem is now ' + stem
         # perform grouping of sequential input frames   
