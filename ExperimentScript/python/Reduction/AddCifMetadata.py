@@ -85,10 +85,14 @@ def extract_metadata(rawfile):
         rawfile.add_metadata("_[local]_diffrn_radiation_wavelength_determination",
                   "Wavelength is calculated from monochromator hkl and takeoff angle and is therefore approximate",
                   tag="CIF")
-    rawfile.add_metadata("_computing_data_collection",str(rawfile["$entry/program_name"]) + " " + \
-                         str(rawfile["$entry/sics_release"]),"CIF")
+    program_name = str(rawfile["$entry/program_name"])
+    try:
+        program_name = program_name + ' Revision:'+ str(rawfile["$entry/program_revision"]) + \
+        " Branch: " + str(rawfile["$entry/program_branch"])
+    except AttributeError:
+        pass
     rawfile.add_metadata("_computing_data_reduction", "Gumtree Wombat/Python routines","CIF")
-    rawfile.add_metadata("_pd_spec_special_details",sanitize(str(rawfile["$entry/sample/name"])),"CIF")
+    rawfile.add_metadata("_pd_spec_special_details",str(rawfile["$entry/sample/name"]),"CIF")
     rawfile.add_metadata("_[local]_data_collection_description",str(rawfile["$entry/sample/description"]),"CIF")
     start_time = str(rawfile["$entry/start_time"]).replace(" ","T")
     end_time = str(rawfile["$entry/end_time"]).replace(" ","T")
@@ -98,7 +102,7 @@ def extract_metadata(rawfile):
         username = str(rawfile["user_name"])
     except:
         username = "?"
-    rawfile.add_metadata("_pd_meas_info_author_name", sanitize(username),"CIF")
+    rawfile.add_metadata("_pd_meas_info_author_name", username,"CIF")
     rawfile.add_metadata("_pd_meas_info_author_email", str(rawfile[ "$entry/user/email"]),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_phone", str(rawfile[ "$entry/user/phone"]),"CIF")
     rawfile.add_metadata("_pd_instr_2theta_monochr_pre","%.3f" % tk_angle,"CIF")
