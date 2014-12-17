@@ -10,10 +10,11 @@ __datasource__ = __register__.getDataSourceViewer()
 
 # Axis setup
 # possible rotation axes
-rot_table = {'Sample rotation':('/entry1/sample/som','Omega','Degrees'),
+rot_table = {'Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
              'Sample stage':('/entry1/sample/rotate','Omega','Degrees'),
              'Magnet temperature (HE)':('/entry1/sample/tc1/Loop1/sensor',
                                             'Temperature','Kelvin'),
+             'Euler omega':('/entry1/sample/euler_omega','Omega','Degrees'),
              'Sample temperature (Magnet stick 1)':('/entry1/sample/tc1/Loop2/sensor',
                                             'Temperature','Kelvin')}
 rot_axis = Par('string','Magnet rotation',options = rot_table.keys())
@@ -59,6 +60,11 @@ plh_plot    = Par('string', '', options = ['Plot 1', 'Plot 2', 'Plot 3'], comman
 plh_dataset = Par('string', '', options = ['All'])
 plh_delete  = Act('plh_delete_proc()', 'Delete')
 Group('Delete 1D Datasets').add(plh_plot, plh_dataset, plh_delete)
+
+frame_spec = Par('string','')
+frame_spec.title = 'Target angle'
+frame_exec = Act('frame_display_act()','Execute')
+Group('Select frame from Plot 1').add(frame_spec,frame_exec)
     
 ''' Button Actions '''
 
@@ -213,6 +219,41 @@ def plh_delete_proc():
             if ds.title == dataset:
                 target_plot.remove_dataset(ds)
 
+def frame_display_act():
+    target_value = float(frame_spec.value)
+    # Store vertical axis information
+    rot_info = rot_table[str(rot_axis.value)][0]
+    filename = str(__datasource__.getSelectedDatasets()[0].getLocation())
+    print 'Displaying frame %f of %s' % (target_value,filename)
+    ds = df[filename]
+    # create the axes
+    units = rot_table[str(rot_axis.value)][2]
+    try:
+            rot_values = ds[rot_info]
+    except:
+        try:
+                rot_values = SimpleData(ds.__iNXroot__.findContainerByPath(rot_info))
+        except:
+                rot_values = arange(ds.shape[1])
+                units = 'Step Number'
+    print `rot_values`
+    stepsize = (rot_values[-1] - rot_values[0])/(len(rot_values)-1)
+    target_frame = int((target_value-rot_values[0])/stepsize)
+    print 'Displaying frame %d from %s (stepsize %f)' % (target_frame,filename,stepsize)
+    # load dataset
+    rs = ds[target_frame]
+    # check if efficiency correction is required
+    if eff_apply.value:
+        if not eff_map.value:
+            eff = None
+            print 'WARNING: no eff-map was specified'
+        else:
+            eff = Dataset(str(eff_map.value))
+            rs = reduction.getEfficiencyCorrected(rs, eff)
+    else:
+        eff = None
+    Plot2.set_dataset(rs)
+    
 def dspacing_change():
     """Toggle the display of d spacing on the horizontal axis"""
     global Plot2,Plot3
@@ -253,7 +294,7 @@ def load_user_prefs(prefix = ''):
     # Run through our parameters, looking for the corresponding
     # preferences
     g = globals()
-    p = g.scope_keys()
+    p = g.keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
             try:
@@ -272,7 +313,7 @@ def save_user_prefs(prefix=''):
     prof_vals = []
     # sneaky way to get all the preferences
     g = globals()
-    p = g.scope_keys()
+    p = g.keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
             print `name`
