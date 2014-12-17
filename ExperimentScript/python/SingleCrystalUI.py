@@ -252,7 +252,11 @@ def frame_display_act():
             rs = reduction.getEfficiencyCorrected(rs, eff)
     else:
         eff = None
+    stth = ds.stth[0]
+    rs.axes[1] += stth
     Plot2.set_dataset(rs)
+    Plot2.x_label = 'Two theta (degrees)'
+
     
 def dspacing_change():
     """Toggle the display of d spacing on the horizontal axis"""
