@@ -112,10 +112,10 @@ def __run_script__(fns):
     if not in_bkg_run.value:
         print 'specify background run'
         return
-    
-    van = Dataset(str(in_van_run.value)).get_reduced()
+    # multiply to turn into floating point arrays
+    van = Dataset(str(in_van_run.value)).get_reduced()*1.0
     van.location = str(in_van_run.value)
-    bkg = Dataset(str(in_bkg_run.value)).get_reduced()
+    bkg = Dataset(str(in_bkg_run.value)).get_reduced()*1.0
     bkg.location = str(in_bkg_run.value)
 
     # check if input is correct
