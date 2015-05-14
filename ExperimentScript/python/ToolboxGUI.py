@@ -31,9 +31,10 @@ Group('Information').add(full_info,info_show)
 plot_choice_table = {'TC1':('/entry1/sample/tc1/sensor/sensorValueA','Temperature',2.0),
                      'TC2':('/entry1/sample/tc1/sensor/sensorValueB','Temperature',2.0),
                      'Magnet Stick 1':('/entry1/sample/tc1/Loop2/sensor','Temperature',2.0),
-                     'Magnet Stick 2':('/entry1/sample/tc1/Loop2/sensor','Temperature',2.0),
+                     'Magnet Stick 2':('/entry1/sample/tc1/Loop3/sensor','Temperature',2.0),
                      'Magnet Heat Exchanger':('/entry1/sample/tc1/Loop1/sensor','Temperature',2.0),
-                     'Total counts':('/entry1/data/total_counts','Counts',-1)}
+                     'Total counts':('/entry1/data/total_counts','Counts',-1),
+                     'Voltage':('/entry1/sample/alabvolts','Volts',0.01)}
 neat_keys = plot_choice_table.keys()
 neat_keys.sort()
 plot_choice = Par('string','',options=neat_keys)

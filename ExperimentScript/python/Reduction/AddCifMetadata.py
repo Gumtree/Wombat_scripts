@@ -92,6 +92,7 @@ def extract_metadata(rawfile):
     except AttributeError:
         pass
     rawfile.add_metadata("_computing_data_reduction", "Gumtree Wombat/Python routines","CIF")
+    rawfile.add_metadata("_computing_data_collection",program_name,"CIF")
     rawfile.add_metadata("_pd_spec_special_details",str(rawfile["$entry/sample/name"]),"CIF")
     rawfile.add_metadata("_[local]_data_collection_description",str(rawfile["$entry/sample/description"]),"CIF")
     start_time = str(rawfile["$entry/start_time"]).replace(" ","T")

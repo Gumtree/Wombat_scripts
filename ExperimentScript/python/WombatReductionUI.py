@@ -296,7 +296,7 @@ def load_user_prefs(prefix = ''):
     # Run through our parameters, looking for the corresponding
     # preferences
     g = globals()
-    p = g.scope_keys()
+    p = g.keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
             try:
@@ -315,7 +315,7 @@ def save_user_prefs(prefix=''):
     prof_vals = []
     # sneaky way to get all the preferences
     g = globals()
-    p = g.scope_keys()
+    p = g.keys()
     for name in p:
         if eval('isinstance('+ name + ',Par)'):
             prof_val = getattr(g[name], 'value')
@@ -334,6 +334,7 @@ def __run_script__(fns):
     from os.path import basename
     from os.path import join
     from Formats import output
+    import re
     
     df.datasets.clear()
     
@@ -346,7 +347,7 @@ def __run_script__(fns):
         return
 
     # set the title for Plot2
-    Plot2.title = 'Plot 2'
+    # Plot2.title = 'Plot 2'
     # check if input needs to be normalized
     if norm_apply.value:
         # norm_ref is the source of information for normalisation
@@ -431,6 +432,23 @@ def __run_script__(fns):
             ds = reduction.getEfficiencyCorrected(rs, eff)
         else:
             ds = rs
+        # Calculate inserted string: %s for sample name, %t for temperature
+        stem = str(output_stem.value)
+        stem = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem)
+        if '%s' in stem:
+             samplename = ds.harvest_metadata("CIF")['_pd_spec_special_details']
+             name_front = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',samplename)
+             stem = stem.replace('%s',name_front)
+        if '%t1' in stem:
+             # get tc1
+             temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"]
+             print `temperature`
+             try:
+                 avetemp = sum(temperature)/len(temperature)
+             except TypeError:
+                 avetemp = temperature
+             stem = stem.replace('%t1',"%.0fK" % avetemp)
+        print 'Filename stem is now ' + stem
         # perform grouping of sequential input frames   
         start_frames = len(ds)
         current_frame_start = 0
@@ -471,9 +489,12 @@ def __run_script__(fns):
                                                      top=int(vig_upper_boundary.value))
             if target_val != "":
                 cs.title = cs.title + "_" + str(target_val)
-            send_to_plot(cs,Plot2,add=True,change_title=False)
+            try:
+                send_to_plot(cs,Plot2,add=True,change_title=False)
+            except IndexError:  #catch error from GPlot
+                send_to_plot(cs,Plot2,add=False,change_title=True)
             # Output datasets
-            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))
+            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+stem+"_"+str(target_val))
             if output_cif.value:
                 output.write_cif_data(cs,filename_base)
             if output_xyd.value:
