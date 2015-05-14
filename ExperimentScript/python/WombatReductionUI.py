@@ -411,6 +411,7 @@ def __run_script__(fns):
         ds = reduction.AddCifMetadata.extract_metadata(ds)
         try:
              stth_value = sum(ds.stth)/len(ds.stth) # save for later
+             all_stth = ds.stth # also save for later
         except TypeError:
             stth_value = ds.stth
         if ds.ndim > 3:
@@ -434,23 +435,28 @@ def __run_script__(fns):
         start_frames = len(ds)
         current_frame_start = 0
         frameno = 0
+        sum_stth = 0.0
+        frame_count = 0
         while frameno <= start_frames:
             if group_val is None:
                 target_val = ""
                 final_frame = start_frames-1
                 frameno = start_frames
+                ave_stth = stth_value
             else:
                 target_val = ds[group_val][current_frame_start]
                 try:
                     if ds[frameno][group_val] == target_val:
                         frameno += 1
+                        sum_stth += all_stth[frameno]
                         continue
                 except:   #Assume an exception is due to too large frameno
                     pass
+            stth_value = sum_stth/(frameno-current_frame_start)
             # frameno is the first frame with the wrong values
             cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
             cs.copy_cif_metadata(ds)
-            print 'Summing frames from %d to %d, shape %s' % (current_frame_start,frameno-1,cs.shape)
+            print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frameno-1,cs.shape,stth_value)
             if target_val != "":
                 print 'Corresponding to a target value of ' + `target_val`
             # sum the input frames
@@ -477,6 +483,7 @@ def __run_script__(fns):
             #loop to next group of datasets
             current_frame_start = frameno
             frameno += 1
+            sum_stth = 0.0
             
 ''' Utility functions for plots '''
 def send_to_plot(dataset,plot,add=False,change_title=True,add_timestamp=True):
