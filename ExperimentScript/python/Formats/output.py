@@ -136,13 +136,14 @@ def write_fxye_data(ds,filename):
     current_time =  datetime.now().isoformat()
     angles = map(lambda a:("%8.0f" % a),ds.axes[0]*100.0)
     thlen = len(angles)
+    avstep = (ds.axes[0][-1]-ds.axes[0][0])/(thlen - 1)
     ints = map(lambda a:"%7.4f" % a,ds)
     esds = map(lambda a:"%5.4f" % math.sqrt(a),ds.var)
     if not filename[-3:]=='xye':
         filename = filename+'.xye'
     fh = open(filename,"w")
     fh.write("%-80s\n" % "# Data from file %s, written %s. GSAS FXYE format" % (ds.title[0:17],str(current_time)))
-    fh.write("BANK 01 %5d %5d CONS FXYE FXYE FXYE FXYE\n" % (thlen,thlen))
+    fh.write("BANK 01 %5d %5d CONS %s %8.2f 0 0 FXYE\n" % (thlen,thlen,angles[0],avstep*100))
     for ang,intensity,esd in zip(angles,ints,esds):
         fh.write("%s %s %s\n" % (ang,intensity,esd))
     fh.close()
