@@ -220,6 +220,7 @@ def plh_delete_proc():
                 target_plot.remove_dataset(ds)
 
 def frame_display_act():
+    from Reduction import reduction
     target_value = float(frame_spec.value)
     # Store vertical axis information
     rot_info = rot_table[str(rot_axis.value)][0]
