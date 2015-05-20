@@ -9,9 +9,11 @@ from datetime import date
 # Input
 in_van_run  = Par('file', '')
 in_van_run.ext = '*.hdf'
+in_van_run.title = 'Vanadium collection'
 in_van_show = Act('in_van_show_proc()', 'Show') 
 in_bkg_run  = Par('file', '')
 in_bkg_run.ext = '*.hdf'
+in_bkg_run.title = 'Background collection'
 in_bkg_show = Act('in_bkg_show_proc()', 'Show')
 Group('Input').add(in_van_run, in_van_show, in_bkg_run, in_bkg_show)
 
@@ -137,7 +139,8 @@ def __run_script__(fns):
     if eff_make.value:
         #eff = calibrations.calc_eff_mark2(van, bkg, norm_ref=norm_table[norm_ref],
         #                                  esd_cutoff=eff_std_range.value)
-        eff, pix_ok = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref,var_cutoff = eff_std_range.value**2)
+        eff, pix_ok = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref,var_cutoff = eff_std_range.value)
+        Plot2.set_dataset(Dataset(pix_ok))
     output_filename = join(str(out_folder.value), str(eff_name.value))
     # write out new efficiency file
     import time
