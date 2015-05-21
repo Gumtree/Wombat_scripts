@@ -384,6 +384,8 @@ def __run_script__(fns):
             print 'WARNING: no bkg-map was specified'
         else:
             bkg = Dataset(str(bkg_map.value))
+            # to avoid complaints in routines that expect it
+            reduction.AddCifMetadata.add_metadata_methods(bkg)
     else:
         bkg = None
     
