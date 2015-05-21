@@ -71,8 +71,7 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=1.0):
     final_map.var = eff_error
     return final_map, pix_ok_map
 
-def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127, 
-    detail=None,splice=None, esd_cutoff=1.0,det_edges=[9,964]):
+def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127):
     """Calculate efficiencies given vanadium and background hdf files.  If detail is
     some integer, detailed calculations for that y position will be displayed.  A value for step larger
     than the total steps will result in zero efficiency for this ypixel overall. A splicing operation
@@ -134,13 +133,18 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
     eff_array[simple_vanad > 10] = simple_vanad
     eff_array = eff_array*eff_array.size/eff_array.sum()
     eff_array[simple_vanad > 0] = 1.0/eff_array
-    # apply this correction to last frame which we expect to have the most
+    # apply this temporary correction to last frame which we expect to have the most
     # peaks, as no V peaks will be at low enough angle to fall off the
     # detector during scanning. If this assumption is incorrect, a more
     # rigourous routine could do this twice, for the first and last frames
     frame_last = (pure_vanad.storage[nosteps-1]*eff_array).intg(axis=0)  #sum vertically
     print 'Final frame max, min values after correction: %f %f' % (max(frame_last),min(frame_last))# find the peaks, get a background too
     peak_list,back_lev = peak_find(frame_last)
+    # Prepare return information
+    peak_pos = [(stth[nosteps-1]+a*0.125,b*0.125) for (a,b) in peak_list]
+    info_list = "List of peaks found and purged:\n Position  Purge range"
+    for pos,fwhm in peak_pos:
+        info_list += "%8.2f  %8.2f\n" % (pos,fwhm)
     # Remove these peaks from all frames.
     # degrees. The step size is...
     step_size = (stth[nosteps-1]-stth[0])/(nosteps-1)
@@ -148,131 +152,23 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
     # Remove all peaks from the pure data
     purged = peak_scrub(pure_vanad,peak_list,step_size,start_at_end=True)
     # Get gain based on pixels above quarter background
-    eff_array,non_zero_contribs = nonzero_gain(purged,back_lev/(pure_vanad.shape[1]*4))
-    return eff_array,non_zero_contribs
-    # now we have to get some efficiency numbers out.  We will have nosteps 
-    # observations of each value, if nothing is blocked or scrubbed.   We obtain a
-    # relative efficiency for every pixel at each height, and then average to
-    # get a mean efficiency together with a standard deviation.
-    #
-    # We output a multiplier used for correction, so we need the inverse
-    # of the observed relative value
-    #
-    # remember the structure of our data: the leftmost index is the vertical
-    # pixel number, the right is the angle,
-    eff_array = array.zeros(pure_vanad[0].shape)
-    eff_error = array.zeros(pure_vanad[0].shape)
-    # Now zero out any areas that are clearly dodgy, based on the first
-    # image
-    eff_array[pure_vanad[0]<back_lev/2.0] = 0
-    eff_error[pure_vanad[0]<back_lev/2.0] = 1
-    # For each detector position, calculate a factor relative to the mean observed intensity
-    # at that step.
-    step_sum = pure_vanad.sum(0) #total counts at each step
-    print 'Time now %f from start' % (time.time() - starttime)
-    # No broadcasting, have to be clever.  We have to keep our storage in
-    # gumpy, not Jython, so we avoid creating large jython lists by not
-    # using map.
-    # step_gain = array.ones(pure_vanad.shape)
-    #sec_shape = [1,pure_vanad.shape[1],pure_vanad.shape[2]]
-    #for new in range(len(step_sum)):
-    #    pvas = pure_vanad.get_section([new,0,0],sec_shape)
-    step_gain = pure_vanad.transpose()  # so now have [ypixel,vertical,step]
-    print 'Step gain calculated, shape %s: Time now %f from start' % (`step_gain.shape`,time.time() - starttime)
-    # Now each point in step gain is the gain of this pixel at that step, assuming
-    # identical illumination at each step.
-    # We add the individual observations to obtain the total gain...
-    # Note that we have to reshape in order to make the arrays an array of vectors so that
-    # mean and covariance will work correctly.  After the reshape + transpose below, we
-    # have shape[1]*shape[2] vectors that are shape[0] (ie number of steps) long.
-    gain_as_vectors = step_gain.reshape([step_gain.shape[0],step_gain.shape[1]*step_gain.shape[2]]) 
-    gain_as_vectors = gain_as_vectors.transpose()
-    print 'Gain vectors, shape is now %s' % gain_as_vectors.shape
-    # count the non-zero contributions
-    nonzero_contribs = array.zeros(gain_as_vectors.shape,dtype=float)
-    nonzero_contribs[gain_as_vectors>0] = 1.0
-    print 'Have non-zero: Time now %f from start' % (time.time() - starttime)
-    nz_sum = nonzero_contribs.sum(axis=0)
-    gain_sum = gain_as_vectors.sum(axis=0)
-    total_gain = zeros_like(gain_sum)
-    total_gain[nz_sum>0] = gain_sum/nz_sum
-    final_gain = total_gain.reshape([step_gain.shape[1],step_gain.shape[2]])
-    #print 'We have total gain: ' + `final_gain`
-    print 'Shape ' + `final_gain.shape`
-    print 'Time now %f from start' % (time.time() - starttime)
-    # efficiency speedup; we would like to write
-    # eff_array[:,bottom:top] = 1.0/final_gain
-    # but anything in gumpy with square brackets goes crazy slow.
-    #eff_array_sect = eff_array.get_section([0,bottom],[eff_array.shape[0]-missing_total,top-bottom])
-    # temporarily set values in eas to -1
-    final_gain[final_gain==0] = -1
-    eas_iter = eff_array.item_iter()
-    fgi = final_gain.item_iter()
-    while eas_iter.has_next():
-        eas_iter.set_next(1.0/fgi.next())
-    eff_array[eff_array==-1] = 0
-    print 'Efficiency array setting took until %f' % (time.time() - starttime)
-    print 'Check: element (64,64) is %f' % (eff_array[64,64])
-    return eff_array
-    # Calculate the covariance of the final sum as the covariance of the
-    # series of observations, divided by the number of observations
-    cov_array = zeros(gain_as_vectors.shape,dtype=float)
-    # Following is necessary to match dimensions
-    total_gain = total_gain.reshape([total_gain.shape[0],1])
-    print 'Shapes: ' + `cov_array[:,0].shape` + `gain_as_vectors[:,0].shape` + `total_gain.shape`
-    for step in xrange(gain_as_vectors.shape[1]):
-        print 'Covariance step %d' % step
-        cov_array[:,step] = (gain_as_vectors[:,step] - total_gain)**2
-    # Now ignore the points that are not observed before summing
-    cov_array[gain_as_vectors<=0] = 0
-    cov_sum = cov_array.sum(axis=0)
-    cov_result = cov_sum/(nz_sum - 1)
-    covariances = cov_result.reshape([step_gain.shape[1],step_gain.shape[2]])
-    print 'We have covariances too! ' + `covariances.shape`
-    print 'Writing to eff_error, shape ' + `eff_error[:,bottom:top].shape`
-    #   eff_error[tube_no] = (variance*(inverse_val**4))
-    # We want to write...
-    # eff_error[:,bottom:top] = covariances*(eff_array[:,bottom:top]**4)
-    # but for a speed-up we write...
-    eff_error_sect = eff_error.get_section([det_edges[0],bottom],[eff_error.shape[0]-missing_total,top-bottom])
-    easi = eff_error_sect.item_iter()
-    covi = covariances.item_iter()
-    effi = eff_array_sect.item_iter()
-    while easi.has_next():
-        easi.set_next(covi.next()*(effi.next()**4))
-    # pixel OK map...anything with positive efficiency but variance is no 
-    # greater than the efficiency (this latter is arbitrary)return eff_array
-    ok_pixels = zeros(eff_array.shape,dtype=int)
-    ok_pixels[eff_array>0]=1
-    pix_ok_map = zeros(eff_error.shape,dtype=int)
-    pix_ok_map[eff_error > eff_array]=1
-    print "OK pixels %d" % ok_pixels.sum() 
-    print "Variance not OK pixels %d" % pix_ok_map.sum()
-    # Now fix our output arrays to put dodgy pixels to one
-    eff_array[eff_error>eff_array] = 1.0
-    if splice: 
-        backgr_str = backgr[0]+" + " + backgr[1]
-        add_str = "data from %s up to step %d replaced with data from %s" % (backgr[0],splice,backgr[1])
-    else: 
-        backgr_str = backgr
-        add_str = ""
-    # create blocked pixel information table
-    ttable = ""
-    for bypixel,bstep in edge:
-       ttable = ttable + "  %5d%5d\n" % (bypixel,bstep) 
-    return {"_[local]_efficiency_data":eff_array.transpose(),
-            "_[local]_efficiency_variance":eff_error.transpose(),
-            "contributors":pix_ok_map,
-            "_[local]_efficiency_raw_data":os.path.basename(str(vanad.location)),
-            "_[local]_efficiency_raw_timestamp":vtime,
-            "_[local]_efficiency_background_data":os.path.basename(str(backgr.location)),
-            "_[local]_efficiency_background_timestamp":btime,
-            "_[local]_efficiency_determination_material":"Vanadium",
-            "_[local]_efficiency_determination_method":"From flood field produced by 9mm V rod",
-            "_[local]_efficiency_monochr_omega":omega,
-            "_pd_proc_info_data_reduction":
-             "Flood field data lower than values in following table assumed obscured:\n  Ypixel   Step\n " + ttable + add_str
-            }
+    eff_array,eff_error,non_zero_contribs = nonzero_gain(purged,back_lev/(pure_vanad.shape[1]*4))
+    final_map = Dataset(eff_array)
+    final_map.var = eff_error
+    return final_map,non_zero_contribs
+    #return {"_[local]_efficiency_data":eff_array.transpose(),
+    #        "_[local]_efficiency_variance":eff_error.transpose(),
+    #        "contributors":non_zero_contribs,
+    #        "_[local]_efficiency_raw_data":os.path.basename(str(vanad.location)),
+    #        "_[local]_efficiency_raw_timestamp":vtime,
+    #        "_[local]_efficiency_background_data":os.path.basename(str(backgr.location)),
+    #        "_[local]_efficiency_background_timestamp":btime,
+    #        "_[local]_efficiency_determination_material":"Vanadium",
+    #        "_[local]_efficiency_determination_method":"From flood field produced by 9mm V rod",
+    #        "_[local]_efficiency_monochr_omega":omega,
+    #        "_pd_proc_info_data_reduction":
+    #         "Vanadium peaks at the following positions were purged:\n Pos  Range\n " +  info_list
+    #        },non_zero_contribs
 
 def peak_find(intensity_list,min_val=100):
     """Return a list of (pos,fwhm) containing all peaks at least 3 sig
@@ -334,14 +230,14 @@ def peak_scrub(ds,peak_remove_list,stepsize,pixelsize=0.125,start_at_end=False):
             target_frame = len(ds)-one_frame-1
         else:
             target_frame = one_frame
-        print 'Frame %d: peak from %d to %d' % (target_frame,peak_min,peak_max)
+        #print 'Frame %d: peak from %d to %d' % (target_frame,peak_min,peak_max)
         rs[target_frame,:,peak_min:peak_max] = 0
     return rs
 
 def nonzero_gain(ds,minlevel=0):
     """Calculate the gains from 3D dataset ds, by averaging the individual
     measurements in each pixel, excluding any that are below minlevel"""
-    import time
+    import time,math
     starttime = time.time()
     eff_array = array.zeros(ds[0].shape)
     eff_error = array.zeros(ds[0].shape)
@@ -356,12 +252,41 @@ def nonzero_gain(ds,minlevel=0):
     nonzero_contribs[rs>0] = 1
     contrib_map = nonzero_contribs.intg(axis=0)
     gain[contrib_map>0] = gain/contrib_map
+    var_calc = array.zeros_like(rs)
+    var_calc[rs>0] = ((rs-gain)**2)
+    print 'Checking variance calculation for pixel 64,64'
+    #print 'Raw gain values'
+    #print `rs[:,64,64].storage.transpose()`
+    #print 'Differences'
+    #print `(rs-gain)[:,64,64].storage.transpose()`
+    var_final = var_calc.intg(axis=0)
+    var_final[contrib_map>0] = var_final/(contrib_map**2)
+    print 'Average value %f (%d contributors)' % (gain[64,64],contrib_map[64,64]) 
+    print 'Estimated variance %f ' % (var_final[64,64]*contrib_map[64,64])
+    print 'Variance of the mean is then %f' % var_final[64,64]
     # normalise
-    gain = gain*gain.size/gain.sum()
+    ave = gain.sum()/gain.size
+    print 'Average total intensity per pixel is %f' % ave
+    gain = gain/ave
+    var_final = var_final/(ave*ave)
     eff_array[gain>0] = 1.0/gain
     print 'Efficiency array setting took until %f' % (time.time() - starttime)
     print 'Check: element (64,64) is %f' % (eff_array[64,64])
-    return eff_array,contrib_map
+    # now take account of the inverse
+    eff_error[gain>0] = var_final*(eff_array)**4 
+    print 'Variance array setting took until %f' % (time.time() - starttime)
+    print 'Check: err on element (64,64) is %f' % (math.sqrt(eff_error[64,64]))
+    # Check for missed pixels
+    nonzero_contribs = array.zeros(gain.shape,int)
+    nonzero_contribs[gain>0] = 1
+    contrib_list = nonzero_contribs.sum(axis=1)
+    dodgy = contrib_list[contrib_list>0 and contrib_list < max(contrib_list)].shape[0]
+    print 'Found %d dodgy columns' % dodgy
+    print 'Column Pixels'
+    for i in range(len(contrib_list)):
+        if contrib_list[i]>0 and contrib_list[i]<128:
+            print "%d %d" % (i,contrib_list[i])
+    return eff_array,eff_error,contrib_map
 
 def output_2d_efficiencies(result_dict,filename,comment='',transpose=False):
     #We have to make sure that we have our array orientation correct. The

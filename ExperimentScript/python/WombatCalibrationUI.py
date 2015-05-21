@@ -9,16 +9,17 @@ from datetime import date
 # Input
 in_van_run  = Par('file', '')
 in_van_run.ext = '*.hdf'
-in_van_run.title = 'Vanadium collection'
+in_van_run.title = 'Vanadium'
 in_van_show = Act('in_van_show_proc()', 'Show') 
 in_bkg_run  = Par('file', '')
 in_bkg_run.ext = '*.hdf'
-in_bkg_run.title = 'Background collection'
+in_bkg_run.title = 'Background'
 in_bkg_show = Act('in_bkg_show_proc()', 'Show')
 Group('Input').add(in_van_run, in_van_show, in_bkg_run, in_bkg_show)
 
 # Output Folder
 out_folder = Par('file')
+out_folder.title = 'Output Folder'
 out_folder.dtype = 'folder'
 Group('Output Folder').add(out_folder)
 
@@ -28,14 +29,17 @@ norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts',
               'Monitor 3':'bm3_counts','Detector time':'detector_time'}
 
 norm_apply     = Par('bool'  , 'True'      )
+norm_apply.title = 'Apply'
 norm_reference = Par('string', 'Monitor 1', options = norm_table.keys())
+norm_reference = 'Source'
 Group('Normalization').add(norm_apply, norm_reference)
 
 # Efficiency Correction Map
 eff_make = Par('bool'  , 'True')
-eff_name = Par('string', date.today().strftime("eff_%Y_%m_%d.cif"))
-eff_std_range      = Par('float' , '1.8' )
-Group('Efficiency Correction Map').add(eff_make, eff_name, eff_std_range)
+eff_make.title = 'Create'
+eff_name = Par('string', date.today().strftime("eff_%Y_%m_%d.gumtree.hdf"))
+eff_name.title = 'Filename'
+Group('Efficiency Correction Map').add(eff_make, eff_name)
 
 ''' Load Preferences '''
 
@@ -139,8 +143,10 @@ def __run_script__(fns):
     if eff_make.value:
         #eff = calibrations.calc_eff_mark2(van, bkg, norm_ref=norm_table[norm_ref],
         #                                  esd_cutoff=eff_std_range.value)
-        eff, pix_ok = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref,var_cutoff = eff_std_range.value)
-        Plot2.set_dataset(Dataset(pix_ok))
+        eff, pix_ok = calibrations.calc_eff_mark2(van,bkg,norm_ref=norm_ref)
+        contrib_ds = Dataset(pix_ok)
+        contrib_ds.title = 'Pixels contributing'
+        Plot2.set_dataset(contrib_ds)
     output_filename = join(str(out_folder.value), str(eff_name.value))
     # write out new efficiency file
     import time
