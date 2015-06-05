@@ -71,23 +71,15 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0):
     return final_map, pix_ok_map
 
 def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127):
-    """Calculate efficiencies given vanadium and background hdf files.  If detail is
-    some integer, detailed calculations for that y position will be displayed.  A value for step larger
-    than the total steps will result in zero efficiency for this ypixel overall. A splicing operation
-    merges files in backgr by substituting the first splice steps of the first file with
-    the first splice steps of the second file.
+    """Calculate efficiencies given vanadium and background hdf files. 
 
     The approach of this new version is to calculate relative efficiencies for each pixel at each step,
     then average them at the end.  This allows us to account for variations in illumination as
-    a function of time, and would allow us to remove V coherent peaks rather than replace them with 
-    neighbouring values (see Echidna version).  It also gives us a decent estimate of the error.
+    a function of time, and allows us to remove V coherent peaks.  It also gives us a 
+    decent estimate of the error.
 
     norm_ref is the source of normalisation counts for putting each frame and each dataset onto a
-    common scale. Top and bottom are the upper and lower limits for a sensible signal.
-    Pixels with an estimated error greater than esd_cutoff will be marked as bad.
-    (not yet implemented).
-    
-    Dead_cols is a list of pixel columns that are dead."""
+    common scale. Top and bottom are the upper and lower limits for a sensible signal. """
 
     import stat,datetime,time,sys
     starttime = time.time()
