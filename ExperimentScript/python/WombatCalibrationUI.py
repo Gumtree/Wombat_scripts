@@ -27,11 +27,10 @@ Group('Output Folder').add(out_folder)
 # We link the normalisation sources to actual dataset locations right here, right now
 norm_table = {'Monitor 1':'bm1_counts','Monitor 2':'bm2_counts',
               'Monitor 3':'bm3_counts','Detector time':'detector_time'}
-
 norm_apply     = Par('bool'  , 'True'      )
 norm_apply.title = 'Apply'
 norm_reference = Par('string', 'Monitor 1', options = norm_table.keys())
-norm_reference = 'Source'
+norm_reference.title = 'Source'
 Group('Normalization').add(norm_apply, norm_reference)
 
 # Efficiency Correction Map
