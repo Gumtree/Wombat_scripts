@@ -4,15 +4,14 @@ import AddCifMetadata,reduction
 import os
 from gumpy.nexus import *
 
-def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=1.0):
+def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0):
     """Calculate efficiencies given vanadium and background hdf files. 
 
     The approach of this simple version is, after subtracting background, to find the sum of
     all the frames and assume that this is proportional to the gain.
 
     norm_ref is the source of normalisation counts for putting each frame and each dataset onto a
-    common scale. Pixels with an estimated error greater than esd_cutoff will be marked as bad.
-    (not yet implemented).
+    common scale. Pixels greater than esd_cutoff*error will not contribute.
     """
 
     import stat,datetime,time,math

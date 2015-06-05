@@ -38,7 +38,10 @@ eff_make = Par('bool'  , 'True')
 eff_make.title = 'Create'
 eff_name = Par('string', date.today().strftime("eff_%Y_%m_%d.gumtree.hdf"))
 eff_name.title = 'Filename'
-Group('Efficiency Correction Map').add(eff_make, eff_name)
+eff_technique = Par('string','No V peaks',options=['No V peaks','Naive'])
+eff_technique.title = 'Calculation'
+Group('Efficiency Correction Map').add(eff_make, eff_name,eff_technique)
+
 
 ''' Load Preferences '''
 
@@ -142,7 +145,12 @@ def __run_script__(fns):
     if eff_make.value:
         #eff = calibrations.calc_eff_mark2(van, bkg, norm_ref=norm_table[norm_ref],
         #                                  esd_cutoff=eff_std_range.value)
-        eff, pix_ok = calibrations.calc_eff_mark2(van,bkg,norm_ref=norm_ref)
+        if str(eff_technique.value)=='No V peaks':
+            eff, pix_ok = calibrations.calc_eff_mark2(van,bkg,norm_ref=norm_ref)
+        elif str(eff_technique.value)=='Naive':
+            eff, pix_ok = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref)
+        else:
+            raise ValueError, 'Efficiency calculation technique not recognised'
         contrib_ds = Dataset(pix_ok)
         contrib_ds.title = 'Pixels contributing'
         Plot2.set_dataset(contrib_ds)
