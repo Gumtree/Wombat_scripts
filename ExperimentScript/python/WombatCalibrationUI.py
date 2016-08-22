@@ -42,6 +42,12 @@ eff_technique = Par('string','No V peaks',options=['No V peaks','Naive'])
 eff_technique.title = 'Calculation'
 Group('Efficiency Correction Map').add(eff_make, eff_name,eff_technique)
 
+# Unusual parameters
+tool_frame_low = Par('int',0)
+tool_frame_low.title = 'First frame'
+tool_frame_high = Par('int',50)
+tool_frame_high.title = 'Last frame'
+Group('Toolbox').add(tool_frame_low,tool_frame_high)
 
 ''' Load Preferences '''
 
@@ -142,18 +148,31 @@ def __run_script__(fns):
         norm_ref = norm_table[str(norm_reference.value)]
     else:
         norm_ref = None
+    low_lim = tool_frame_low.value
+    high_lim = tool_frame_high.value
+    if low_lim <=0: low_lim =  0
     if eff_make.value:
+        fl = None   #holding value
         #eff = calibrations.calc_eff_mark2(van, bkg, norm_ref=norm_table[norm_ref],
         #                                  esd_cutoff=eff_std_range.value)
         if str(eff_technique.value)=='No V peaks':
-            eff, pix_ok = calibrations.calc_eff_mark2(van,bkg,norm_ref=norm_ref)
+            eff, pix_ok,fudge_map,fl = calibrations.calc_eff_mark2(van,bkg,norm_ref=norm_ref,
+                                                      low_frame=low_lim,
+                                                      high_frame=high_lim)
         elif str(eff_technique.value)=='Naive':
-            eff, pix_ok = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref)
+            eff, pix_ok,fudge_map = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref,
+                                                      low_frame=low_lim,
+                                                      high_frame=high_lim)
         else:
             raise ValueError, 'Efficiency calculation technique not recognised'
+        var_check = Dataset(fudge_map)
+        var_check.title = ('Variance against counts')
+        Plot1.set_dataset(var_check)
         contrib_ds = Dataset(pix_ok)
         contrib_ds.title = 'Pixels contributing'
         Plot2.set_dataset(contrib_ds)
+        if fl is not None:
+            Plot3.set_dataset(Dataset(fl))
     output_filename = join(str(out_folder.value), str(eff_name.value))
     # write out new efficiency file
     import time

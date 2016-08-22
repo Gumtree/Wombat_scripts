@@ -23,8 +23,10 @@ output_stem.title = 'Append to filename'
 grouping_options = {"Frame":"run_number","TC1 setpoint":"tc1","None":None}
 output_grouping = Par('string','None',options=grouping_options.keys())
 output_grouping.title = 'Split frames'
+output_restrict = Par('string','All')
+output_restrict.title = 'These frames only (n:m)'
 Group('Output File').add(output_xyd,output_cif,output_fxye,output_stem,out_folder,
-                           output_grouping)
+                           output_grouping,output_restrict)
 
 # Normalization
 # We link the normalisation sources to actual dataset locations right here, right now
@@ -460,10 +462,18 @@ def __run_script__(fns):
                  avetemp = temperature
              stem_template = stem_template.replace('%vf',"%.0fC" % avetemp)
         print 'Filename stem is now ' + stem_template
+        # restrict output set of frames
+        restrict_spec = str(output_restrict.value)
+        if ':' in restrict_spec:
+            first,last = map(int,restrict_spec.split(':'))
+            start_frames = last
+            current_frame_start = first
+            frameno = first
+        else:
+            start_frames = len(ds)
+            current_frame_start = 0
+            frameno = 0
         # perform grouping of sequential input frames   
-        start_frames = len(ds)
-        current_frame_start = 0
-        frameno = 0
         while frameno <= start_frames:
             stem = stem_template
             if group_val is None:

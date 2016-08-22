@@ -4,7 +4,8 @@ import AddCifMetadata,reduction
 import os
 from gumpy.nexus import *
 
-def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0):
+def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0,low_frame=0,
+                   high_frame=967):
     """Calculate efficiencies given vanadium and background hdf files. 
 
     The approach of this simple version is, after subtracting background, to find the sum of
@@ -38,17 +39,23 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0):
     # Fail early
     print 'Using %s and %s' % (str(vanad.location),str(backgr.location))
     # Subtract the background if requested
-    check_val = backgr[12,64,64]
+    check_val = backgr[8,64,64]
     if norm_ref is not None:
         norm_target = reduction.applyNormalization(vanad,norm_ref,-1)
         # store for checking later
-        check_val = backgr[12,64,64]
+        check_val = backgr[8,64,64]
         nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
         # 
         print 'Normalising background to %f'  % norm_target
     pure_vanad = (vanad - backgr).get_reduced()    #remove the annoying 2nd dimension
+    # drop any frames that have been requested
+    if low_frame != 0 or high_frame < len(pure_vanad):
+        pure_vanad = pure_vanad[low_frame:high_frame]
+        print 'Only using part of supplied data: %d to %d, new length %d' % (low_frame,high_frame,len(pure_vanad))
     # pure_vanad.copy_cif_metadata(vanad)
-    print 'Check: %f, %f -> %f' % (vanad[12,64,64],check_val,pure_vanad[12,64,64])
+    print 'Check: %f, %f -> %f' % (vanad[8,64,64],check_val,pure_vanad[8,64,64])
+    # This is purely for the fudge map
+    d1,d2,d3,fudge_map = nonzero_gain(pure_vanad)
     pure_vanad = pure_vanad.intg(axis=0)   # sum over the detector step axis
     # calculate typical variability across the detector
     ave = pure_vanad.sum()/pure_vanad.size
@@ -68,9 +75,10 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0):
     print "Variance not OK pixels %d" % (pix_ok_map.sum() - pix_ok_map.size)
     final_map = Dataset(eff_array)
     final_map.var = eff_error
-    return final_map, pix_ok_map
+    return final_map, pix_ok_map, fudge_map
 
-def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127):
+def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
+                   low_frame=0,high_frame=967):
     """Calculate efficiencies given vanadium and background hdf files. 
 
     The approach of this new version is to calculate relative efficiencies for each pixel at each step,
@@ -108,14 +116,18 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127):
     if norm_ref is not None:
         norm_target = reduction.applyNormalization(vanad,norm_ref,-1)
         # store for checking later
-        check_val = backgr[12,64,64]
+        check_val = backgr[8,64,64]
         nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
         # 
         print 'Normalising background to %f'  % norm_target
     pure_vanad = (vanad - backgr).get_reduced()    #remove the annoying 2nd dimension
+    # drop any frames that have been requested
+    if low_frame != 0 or high_frame < len(pure_vanad):
+        pure_vanad = pure_vanad[low_frame:high_frame]
+        print 'Only using part of supplied data: %d to %d, new length %d' % (low_frame,high_frame,len(pure_vanad))
     stth = pure_vanad.stth   #store for later
     # pure_vanad.copy_cif_metadata(vanad)
-    print 'Check: %f, %f -> %f' % (vanad[12,64,64],check_val,pure_vanad[12,64,64])
+    print 'Check: %f, %f -> %f' % (vanad[8,64,64],check_val,pure_vanad[8,64,64])
     nosteps = pure_vanad.shape[0]
     # generate a rough correction
     simple_vanad = pure_vanad.intg(axis=0)   # sum over the detector step axis
@@ -143,10 +155,10 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127):
     # Remove all peaks from the pure data
     purged = peak_scrub(pure_vanad,peak_list,step_size,start_at_end=True)
     # Get gain based on pixels above quarter background
-    eff_array,eff_error,non_zero_contribs = nonzero_gain(purged,back_lev/(pure_vanad.shape[1]*4))
+    eff_array,eff_error,non_zero_contribs,fudge_map = nonzero_gain(purged,back_lev/(pure_vanad.shape[1]*4))
     final_map = Dataset(eff_array)
     final_map.var = eff_error
-    return final_map,non_zero_contribs
+    return final_map,non_zero_contribs,fudge_map,frame_last  #last frame, for reference
     #return {"_[local]_efficiency_data":eff_array.transpose(),
     #        "_[local]_efficiency_variance":eff_error.transpose(),
     #        "contributors":non_zero_contribs,
@@ -170,6 +182,7 @@ def peak_find(intensity_list,min_val=100):
     print 'Average background in one frame %f' % backave
     length = len(intensity_list)
     frame_temp = copy(intensity_list)   #copy
+    frame_temp = frame_temp[10:-10] #avoid edge effects
     peak_list = []
     while True:
         peakval = frame_temp.max()
@@ -181,16 +194,16 @@ def peak_find(intensity_list,min_val=100):
             if max_pos == length or frame_temp[max_pos]==peakval: break
             continue
         if max_pos == len(frame_temp): break
-        peak_list.append(max_pos)
-        print 'Peak found at %d, height %f' % (max_pos,peakval)
+        peak_list.append(max_pos+10) #plus 10 from edge effect removal
+        print 'Peak found at %d, height %f' % (max_pos,peakval-backave)
         # blank out surrounding +/- 5 degrees
         frame_temp[sys.builtins['max'](0,max_pos-40):sys.builtins['min'](length,max_pos+40)] = 0
     # Reset frame_one and Work out the peak widths
     fwhm_list = []
     for peak in peak_list:
-        neighbourhood = intensity_list[peak-40:peak+40]
+        neighbourhood = intensity_list[peak-40:peak+40] 
         half_max = backave + (intensity_list[peak]-backave)/2.0
-        print 'Peak at %d, searching for pixel below %f' % (peak,half_max)
+        print 'Peak of %f at %d, searching for pixel below %f' % (intensity_list[peak],peak,half_max)
         lhs = 40
         while lhs > 0:
             if neighbourhood[lhs]>half_max: 
@@ -244,17 +257,21 @@ def nonzero_gain(ds,minlevel=0):
     contrib_map = nonzero_contribs.intg(axis=0)
     gain[contrib_map>0] = gain/contrib_map
     var_calc = array.zeros_like(rs)
-    var_calc[rs>0] = ((rs-gain)**2)
+    var_calc[nonzero_contribs>0] = ((rs-gain)**2)
     print 'Checking variance calculation for pixel 64,64'
     #print 'Raw gain values'
     #print `rs[:,64,64].storage.transpose()`
     #print 'Differences'
     #print `(rs-gain)[:,64,64].storage.transpose()`
     var_final = var_calc.intg(axis=0)
-    var_final[contrib_map>0] = var_final/(contrib_map**2)
+    var_final[contrib_map>0] = var_final/contrib_map
     print 'Average value %f (%d contributors)' % (gain[64,64],contrib_map[64,64]) 
     print 'Estimated variance %f ' % (var_final[64,64]*contrib_map[64,64])
     print 'Variance of the mean is then %f' % var_final[64,64]
+    # the gain value is the average intensity in the pixel
+    # the variance value should be about the same. Do a check
+    fudge_map = array.zeros_like(gain)
+    fudge_map[contrib_map>0] = var_final/gain # should be about 1
     # normalise
     ave = gain.sum()/gain.size
     print 'Average total intensity per pixel is %f' % ave
@@ -277,7 +294,7 @@ def nonzero_gain(ds,minlevel=0):
     for i in range(len(contrib_list)):
         if contrib_list[i]>0 and contrib_list[i]<128:
             print "%d %d" % (i,contrib_list[i])
-    return eff_array,eff_error,contrib_map
+    return eff_array,eff_error,contrib_map,fudge_map
 
 def output_2d_efficiencies(result_dict,filename,comment='',transpose=False):
     #We have to make sure that we have our array orientation correct. The

@@ -16,7 +16,8 @@ rot_table = {'Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
                                             'Temperature','Kelvin'),
              'Euler omega':('/entry1/sample/euler_omega','Omega','Degrees'),
              'Sample temperature (Magnet stick 1)':('/entry1/sample/tc1/Loop2/sensor',
-                                            'Temperature','Kelvin')}
+                                            'Temperature','Kelvin'),
+             'Detector step':('/entry1/sample/azimuthal_angle','stth','Degrees')}
 rot_axis = Par('string','Magnet rotation',options = rot_table.keys())
 Group('Axis setup').add(rot_axis)
 # Normalization
@@ -257,6 +258,9 @@ def frame_display_act():
     rs.axes[1] += stth
     Plot2.set_dataset(rs)
     Plot2.x_label = 'Two theta (degrees)'
+    # Put the 1D version in Plot3
+    stacked = Plot1.get_dataset()
+    Plot3.set_dataset(ff[target_frame])
 
     
 def dspacing_change():
