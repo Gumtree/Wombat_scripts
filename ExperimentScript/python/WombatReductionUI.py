@@ -435,13 +435,13 @@ def __run_script__(fns):
         else:
             ds = rs
         # Calculate inserted string: %s for sample name, %t for temperature
-        stem = str(output_stem.value)
-        stem = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem)
-        if '%s' in stem:
+        stem_template = str(output_stem.value)
+        stem_template = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem_template)
+        if '%s' in stem_template:
              samplename = ds.harvest_metadata("CIF")['_pd_spec_special_details']
              name_front = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',samplename)
-             stem = stem.replace('%s',name_front)
-        if '%t1' in stem:
+             stem_template = stem_template.replace('%s',name_front)
+        if '%t1' in stem_template and group_val is None:
              # get tc1
              temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"]
              print `temperature`
@@ -449,13 +449,23 @@ def __run_script__(fns):
                  avetemp = sum(temperature)/len(temperature)
              except TypeError:
                  avetemp = temperature
-             stem = stem.replace('%t1',"%.0fK" % avetemp)
-        print 'Filename stem is now ' + stem
+             stem_template = stem_template.replace('%t1',"%.0fK" % avetemp)
+        if '%vf' in stem_template and group_val is None:
+             # get tc1
+             temperature = df[fn]["/entry1/sample/tc1/sensor"]
+             print `temperature`
+             try:
+                 avetemp = sum(temperature)/len(temperature)
+             except TypeError:
+                 avetemp = temperature
+             stem_template = stem_template.replace('%vf',"%.0fC" % avetemp)
+        print 'Filename stem is now ' + stem_template
         # perform grouping of sequential input frames   
         start_frames = len(ds)
         current_frame_start = 0
         frameno = 0
         while frameno <= start_frames:
+            stem = stem_template
             if group_val is None:
                 target_val = ""
                 final_frame = start_frames-1
@@ -472,6 +482,23 @@ def __run_script__(fns):
             # frameno is the first frame with the wrong values
             cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
             cs.copy_cif_metadata(ds)
+            # Store temperature if requested
+            if "%t1" in stem:
+                try:
+                    temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"][current_frame_start]
+                except AttributeError:
+                    print 'Unable to determine temperature at step %d' % current_frame_start
+                else:
+                    stem = stem.replace('%t1',"%.0fK" % temperature)
+                    print 'Filename is now ' + stem    
+            elif "%vf" in stem:
+                try:
+                    temperature = df[fn]["/entry1/sample/tc1/sensor"][current_frame_start]
+                except (AttributeError,TypeError):
+                    print 'Unable to determine temperature at step %d' % current_frame_start
+                else:
+                    stem = stem.replace('%vf',"%.0fC" % temperature)
+                    print 'Filename is now ' + stem    
             print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frameno-1,cs.shape,stth_value)
             if target_val != "":
                 print 'Corresponding to a target value of ' + `target_val`
