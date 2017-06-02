@@ -66,22 +66,26 @@ def extract_metadata(rawfile):
     import datetime
     add_standard_metadata(rawfile)
     # get monochromator-related information
-    mom = average_metadata(rawfile['$entry/instrument/crystal/rotate'])
-    tk_angle = average_metadata(rawfile['$entry/instrument/crystal/takeoff_angle'])
+    mom = average_metadata(rawfile,'$entry/instrument/crystal/rotate')
+    tk_angle = average_metadata(rawfile,'$entry/instrument/crystal/takeoff_angle')
     # get the date
     date_form = datetime.datetime.strptime(str(rawfile['$entry/start_time']),"%Y-%m-%d %H:%M:%S")
-    # TODO: use presence/absence of mf2 to determine monochromator and hence, wavelength
-    mf2val = average_metadata(rawfile['$entry/instrument/monochromator/mf2'])
-    if mf2val > 1.0:   #small mono gives dodgy number around 8
+    # Now use information from file to determine mono and wavelength
+    monotype = '115'   #Ge by default
+    monomaterial = 'Ge'
+    mfval = average_metadata(rawfile,'$entry/instrument/monochromator/mf2')
+    if mfval is None:
+        mfval = average_metadata(rawfile,'$entry/instrument/monochromator/mf1')
+	monotype = '002'
+	monomaterial = 'Graphite'
+    if mfval > 1.0:   #small mono gives dodgy number around 8
         monotype = '335'
-    else:
-        monotype = '115'
-    hklval = pick_hkl(mom - tk_angle/2.0,monotype)
+    hklval = pick_hkl(mom - tk_angle/2.0,monotype,monomaterial)
     if len(hklval)==3:      # i.e. h,k,l found
         rawfile.add_metadata("_pd_instr_monochr_pre_spec",
-                  hklval + " reflection from Ge crystal, "+monotype+" cut",tag="CIF")
-        wavelength = calc_wavelength(hklval,tk_angle)
-        rawfile.add_metadata("_diffrn_radiation_wavelength","%.3f" % wavelength,tag="CIF")
+                  hklval + " reflection from "+monomaterial+ " crystal, "+monotype+" cut",tag="CIF")
+        wavelength = calc_wavelength(hklval,tk_angle,monomaterial)
+        rawfile.add_metadata("_diffrn_radiation_wavelength","%.3f" %wavelength,tag="CIF")
         rawfile.add_metadata("_[local]_diffrn_radiation_wavelength_determination",
                   "Wavelength is calculated from monochromator hkl and takeoff angle and is therefore approximate",
                   tag="CIF")
@@ -107,8 +111,8 @@ def extract_metadata(rawfile):
     rawfile.add_metadata("_pd_meas_info_author_email", str(rawfile[ "$entry/user/email"]),"CIF")
     rawfile.add_metadata("_pd_meas_info_author_phone", str(rawfile[ "$entry/user/phone"]),"CIF")
     rawfile.add_metadata("_pd_instr_2theta_monochr_pre","%.3f" % tk_angle,"CIF")
-    rawfile.add_metadata("_pd_instr_dist_spec/detc","%.1f" % average_metadata(rawfile["$entry/instrument/detector/radius"]),"CIF")
-    rawfile.add_metadata("_diffrn_source_power", "%.2f" % (average_metadata(rawfile["$entry/instrument/source/power"])*1000),"CIF")
+    rawfile.add_metadata("_pd_instr_dist_spec/detc","%.1f" % average_metadata(rawfile,"$entry/instrument/detector/radius"),"CIF")
+    rawfile.add_metadata("_diffrn_source_power", "%.2f" % (average_metadata(rawfile,"$entry/instrument/source/power")*1000),"CIF")
     return rawfile
 
 def store_reduction_preferences(rawfile,prof_names,prof_values):
@@ -117,25 +121,30 @@ def store_reduction_preferences(rawfile,prof_names,prof_values):
                                        '_[local]_proc_reduction_value'),)
     rawfile.__dict__['ms'].AddCifItem((names,((prof_names,prof_values),)))
 
-def average_metadata(entrytable):
+def average_metadata(rawfile,location):
     try:
-        return sum(entrytable)/len(entrytable)
+        entrytable = rawfile[location]
+    except AttributeError:
+        return None
+    try:    
+	return sum(entrytable)/len(entrytable)
     except:
         return entrytable    #assume is a non-collection object
 
-def calc_wavelength(hklval, twotheta):
+def calc_wavelength(hklval, twotheta, monomaterial):
     import math
+    material_table = {"Ge":5.657906,"Graphite":6.708}
     h = int(hklval[0])
     k = int(hklval[1])
     l = int(hklval[2])
-    d = 5.657906/math.sqrt(h*h + k*k + l*l)
+    d = material_table[monomaterial]/math.sqrt(h*h + k*k + l*l)
     return 2*d*math.sin(math.pi*twotheta/360.0)
 
-def pick_hkl(offset,monotype):
+def pick_hkl(offset,monotype, monomaterial):
     """A simple routine to guess the monochromator hkl angle. The
     offset values can be found by taking the dot product of the 335
     with the hkl values """
-    if monotype == "335": return monotype
+    if monotype == "335" or monomaterial == "Graphite": return monotype
     if monotype == "115":
         offset_table = {"111":38.94,"113":9.45,"115":0.0,"117":4.37,"119":6.86,
                     "331":60.94,"335":24.52,"337":15.43,"551":66.16}
