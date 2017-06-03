@@ -81,16 +81,14 @@ def prepare_proc():
 
 def sub_plot_proc():
     """Subtract two datasets given their titles only"""
-    # We use the same approach as summation in the
-    # main Echidna GUI routines. We first merge,
-    # then sum.
+    # We assume points coincide exactly
     top_name = str(first_ds.value)
     bot_name = str(subbed_ds.value)
     top_ds,t = find_ds_by_title(top_name)
     bottom_ds,b = find_ds_by_title(bot_name)
     neg_ds = bottom_ds * (-1.0)
-    final_ds = reduction.merge_datasets([top_ds,neg_ds])
-    final_ds = reduction.debunch(final_ds,0.03)  #for testing, for now
+    final_ds = reduction.sum_datasets([top_ds,neg_ds])
+    # final_ds = reduction.debunch(final_ds,0.03)  #for testing, for now
     final_ds.title = 'Subtracted datasets'
     Plot2.set_dataset(final_ds)
 

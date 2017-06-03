@@ -448,6 +448,29 @@ def getEfficiencyCorrected(ds, eff):
     # now include all the efficiency file metadata, except data reduction
     return rs
 
+def sum_datasets(dslist):
+    """Add the provided datasets together"""
+    #Assume all same length, same axis values
+    newds = zeros_like(dslist[0])
+    AddCifMetadata.add_standard_metadata(newds)	
+    title_info = ""
+    proc_info = """This dataset was created by summing points from multiple datasets. Points were 
+    assumed to coincide exactly. Data reduction information for the individual source datasets is as follows:"""
+    for one_ds in dslist:
+    		newds += one_ds
+		title_info = title_info + one_ds.title + "+"
+		proc_info += "\n\n===Dataset %s===\n" % str(one_ds.title) 
+		try:
+		    proc_info += one_ds.harvest_metadata("CIF")["_pd_proc_info_data_reduction"]
+		except KeyError,AttributeError:
+		    pass
+    newds.title = title_info[:-1]  #chop off trailing '+'
+    newds.axes[0] = dslist[0].axes[0]
+    # Add some basic metadata based on metadata of first dataset
+    newds.copy_cif_metadata(dslist[0])
+    newds.add_metadata('_pd_proc_info_data_reduction',proc_info,"CIF")
+    return newds
+
 def convert_to_dspacing(ds):
     if ds.axes[0].name == 'd-spacing':
         return
