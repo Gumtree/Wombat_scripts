@@ -18,14 +18,16 @@ output_cif = Par('bool','True')
 output_cif.title = 'pdCIF'
 output_fxye = Par('bool','False')
 output_fxye.title = 'GSAS FXYE'
+output_topas = Par('bool','False')
+output_topas.title = 'Topas'
 output_stem = Par('string','reduced_')
 output_stem.title = 'Append to filename'
-grouping_options = {"Frame":"run_number","TC1 setpoint":"tc1","None":None}
+grouping_options = {"Frame":"run_number","TC1 setpoint":"/sample/tc1/sensor/setpoint1","None":None}
 output_grouping = Par('string','None',options=grouping_options.keys())
 output_grouping.title = 'Split frames'
 output_restrict = Par('string','All')
 output_restrict.title = 'These frames only (n:m)'
-Group('Output File').add(output_xyd,output_cif,output_fxye,output_stem,out_folder,
+Group('Output File').add(output_xyd,output_cif,output_fxye,output_topas,output_stem,out_folder,
                            output_grouping,output_restrict)
 
 # Normalization
@@ -36,10 +38,11 @@ norm_apply     = Par('bool', 'True')
 norm_apply.title = 'Apply'
 norm_reference = Par('string', 'Monitor 3', options = norm_table.keys())
 norm_reference.title = 'Source'
-norm_target    = 'auto'
+norm_target = Par('int',-1)
+norm_target.title = 'Normalise output datasets to (-1 for none):'
 norm_plot = Act('plot_norm_proc()','Plot')
 norm_plot_all = Act('plot_all_norm_proc()','Plot all')
-Group('Normalization').add(norm_apply, norm_reference,norm_plot_all,norm_plot)
+Group('Normalization').add(norm_apply, norm_reference,norm_target,norm_plot_all,norm_plot)
 
 # Background Correction
 bkg_apply = Par('bool', 'False')
@@ -351,29 +354,30 @@ def __run_script__(fns):
     # set the title for Plot2
     # Plot2.title = 'Plot 2'
     # check if input needs to be normalized
+    normalise_output = False
     if norm_apply.value:
         # norm_ref is the source of information for normalisation
         # norm_tar is the value norm_ref should become,
         # by multiplication.  If 'auto', the maximum value of norm_ref
         # for the first dataset is used, otherwise any number may be entered.
-        norm_ref = str(norm_reference.value)
-        norm_tar = norm_target
-
-        # check if normalization target needs to be determined
-        if len(norm_tar) == 0:
-            norm_ref = None
-            norm_tar = None
-            print 'WARNING: no reference for normalization was specified'
-        elif norm_tar == 'auto':
-            # set flag
+        if len(str(norm_target.value))==0:
             norm_tar = -1
-            # iterate through input datasets
+        else: 
+            norm_tar = int(str(norm_target.value))
+        # check if normalization reference is provided
+        norm_ref = str(norm_reference.value)
+        if len(norm_ref) == 0:
+            norm_ref = None
+            norm_tar = -1
+            print 'WARNING: no reference for normalization was specified'
+        else:
             location = norm_table[norm_ref]     
             print 'utilized reference value for "' + norm_ref + '" is:', norm_tar
             
         # use provided reference value
-        else:
+        if norm_tar != -1:
             norm_tar = float(norm_tar)
+            normalise_output = True
             
     else:
         norm_ref = None
@@ -452,6 +456,15 @@ def __run_script__(fns):
              except TypeError:
                  avetemp = temperature
              stem_template = stem_template.replace('%t1',"%.0fK" % avetemp)
+        if '%t2' in stem_template and group_val is None:
+             # get tc1
+             temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueB"]
+             print `temperature`
+             try:
+                 avetemp = sum(temperature)/len(temperature)
+             except TypeError:
+                 avetemp = temperature
+             stem_template = stem_template.replace('%t2',"%.0fK" % avetemp)
         if '%vf' in stem_template and group_val is None:
              # get tc1
              temperature = df[fn]["/entry1/sample/tc1/sensor"]
@@ -473,7 +486,9 @@ def __run_script__(fns):
             start_frames = len(ds)
             current_frame_start = 0
             frameno = 0
-        # perform grouping of sequential input frames   
+        # perform grouping of sequential input frames 
+        # we accumulate the equivalent total monitor 
+        # counts for requested normalisation later  
         while frameno <= start_frames:
             stem = stem_template
             if group_val is None:
@@ -484,7 +499,7 @@ def __run_script__(fns):
                 stth_value = all_stth[current_frame_start]
                 target_val = ds[group_val][current_frame_start]
                 try:
-                    if ds[frameno][group_val] == target_val:
+                    if df[fn][group_val][frameno] == target_val:
                         frameno += 1
                         continue
                 except:   #Assume an exception is due to too large frameno
@@ -516,6 +531,9 @@ def __run_script__(fns):
             print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
             # es = cs.intg(axis=0)
             es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
+            if normalise_output:
+                es = es / cs.shape[0]
+                print 'Dividing by %d to match requested normalisation counts' % cs.shape[0]
             es.copy_cif_metadata(cs)
             print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
             Plot1.set_dataset(es)
@@ -533,9 +551,11 @@ def __run_script__(fns):
             if output_cif.value:
                 output.write_cif_data(cs,filename_base)
             if output_xyd.value:
-                output.write_xyd_data(cs,filename_base)
+                output.write_xyd_data(cs,filename_base,comment="#",extension="xyd")
             if output_fxye.value:
                 output.write_fxye_data(cs,filename_base)
+            if output_topas.value:
+                output.write_xyd_data(cs,filename_base,comment="'",extension="xye")
             #loop to next group of datasets
             current_frame_start = frameno
             frameno += 1

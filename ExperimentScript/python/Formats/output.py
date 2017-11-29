@@ -92,18 +92,19 @@ def format_esd(number,var):
 
 ###################################################
 # Output xyd data (three column ASCII)
+# Change comment char and extension for other variants
 ###################################################
-def write_xyd_data(ds,filename):
+def write_xyd_data(ds,filename,comment="#",extension="xyd"):
     from datetime import datetime
     current_time =  datetime.now().isoformat()
     angles = map(lambda a:("%.5f" % a),ds.axes[0])
     ints = map(lambda a:"%.2f" % a,ds)
     esds = map(lambda a:"%.5f" % math.sqrt(a),ds.var)
-    if not filename[-3:]=='xyd':
-        filename = filename+'.xyd'
+    if not filename[-3:]==extension[-3:]:
+        filename = filename+'.' + extension
     fh = open(filename,"w")
-    fh.write("# Data from file %s, written %s\n" % (ds.title[0:17],str(current_time)))
-    fh.write("# %10s %10s %10s\n" % ("Angle","Intensity","Error"))
+    fh.write(comment+" Data from file %s, written %s\n" % (ds.title[0:17],str(current_time)))
+    fh.write(comment+" %10s %10s %10s\n" % ("Angle","Intensity","Error"))
     for point in zip(angles,ints,esds):
         fh.write("  %10s %10s %10s\n" % (point[0],point[1],point[2]))
     fh.close()
