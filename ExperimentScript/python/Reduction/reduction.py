@@ -563,6 +563,8 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
     frame_sum = frame_check.intg(axis=1)
     print `b.shape` + "->" + `c.shape`
     print 'Relative no of frames: ' + `frame_sum`
+    mult_fact = frame_sum[0]*len(frame_sum)
+    print 'Multiplication factor at end: %d' % mult_fact
     # Output the starting data for external use
     if dumpfile is not None:
         dump_wire_intensities(dumpfile,raw=b_zeroed)
@@ -589,6 +591,7 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
                ignore+=1      #mask it out
            else:
                break
+        ignore += len(frame_sum)  #to avoid any contamination
         print "Ignoring all wires up to %d" % ignore
         gain,dd,interim_result,residual_map,chisquared,oldesds,first_ave,weights = \
             iterate_data(e[ignore:],iter_no=iterno,unit_weights=unit_weights,pixel_mask=None)
@@ -624,8 +627,12 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
             holeless_var[wire_set*real_step:(wire_set+1)*real_step]=model_var[wire_set*pixel_step:(wire_set+1)*pixel_step]    
         model = holeless_model
         model_var = holeless_var
+    model *= mult_fact
+    model_var = model_var*mult_fact*mult_fact
     cs = Dataset(model)
     cs.var = model_var
+    mult_string =  """Intensities were
+            multiplied by %d to approximate total intensity measured at each point.""" % mult_fact
     # Now build up the important information
     cs.title = ds.title
     cs.copy_cif_metadata(ds)
@@ -649,11 +656,11 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
     if len(use_gains)==0:
         info_string = "After vertical integration between pixels %d and %d," % (bottom,top) + \
         """ individual wire gains were iteratively refined using the Ford/Rollett algorithm (Acta Cryst. (1968) B24,293). 
-            Final gains are stored in the _[local]_refined_gain loop.""" + axis_string
+            Final gains are stored in the _[local]_refined_gain loop.""" + mult_string + axis_string
     else:
         info_string =  "After vertical integration between pixels %d and %d," % (bottom,top) + \
         " individual wire gains were corrected based on a previous iterative refinement using the Ford/Rollett algorithm. The gains used" + \
-        "are stored in the _[local]_refined_gain loop." + axis_string
+        "are stored in the _[local]_refined_gain loop." + mult_string + axis_string
     cs.add_metadata("_pd_proc_info_data_reduction",info_string,append=True)
     return cs,gain,esds,chisquared,c.shape[0]
 

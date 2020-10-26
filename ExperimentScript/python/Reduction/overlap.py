@@ -219,8 +219,8 @@ def find_gain_fr(data, data_weights, gain_array,arminus1=None,pixel_mask=None,er
    elapsed = time.clock()
    outdata,weighted_data,outdata_vars,dummy = apply_gain(data,data_weights,gain_array,pixel_mask)
    # Avoid zero weights, they cause numerical issues
-   weighted_data = weighted_data.clip(0.0001,max(weighted_data))
-   data_weights = data_weights.clip(0.0001,max(data_weights))
+   weighted_data = weighted_data.clip(0.00001,max(weighted_data))
+   data_weights = data_weights.clip(0.00001,max(data_weights))
    # Now calculate A_p (Equation 3 of FR)
    # Refresher: 
    # index 'h' in FR refers to a particular angle for us
