@@ -71,7 +71,7 @@ def extract_metadata(rawfile):
     # get the date
     date_form = datetime.datetime.strptime(str(rawfile['$entry/start_time']),"%Y-%m-%d %H:%M:%S")
     # TODO: use presence/absence of mf2 to determine monochromator and hence, wavelength
-    mf2val = average_metadata(rawfile['$entry/instrument/monochromator/mf2'])
+    mf2val = average_metadata(rawfile['$entry/instrument/monochromator/mf1'])
     if mf2val > 1.0:   #small mono gives dodgy number around 8
         monotype = '335'
     else:
