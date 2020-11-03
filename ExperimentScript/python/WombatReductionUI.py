@@ -73,6 +73,26 @@ vig_rescale_target = Par('float', '10000.0')
 vig_rescale_target.title = 'Rescale to:'
 Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target)
 
+# Recalculate gain
+regain_apply = Par('bool','False')
+regain_apply.title = 'Apply'
+regain_iterno = Par('int','5')
+regain_iterno.title = 'Iterations'
+regain_store = Par('bool','False')
+regain_store.title = 'Store gain result'
+regain_store_filename = Par('file')
+regain_store_filename.title = 'Store in file:'
+regain_load = Par('bool','False')
+regain_load.title = 'Load gain from file'
+regain_load_filename = Par('file')
+regain_load_filename.title = 'Gain file'
+#regain_dump_tubes = Par('bool','False')
+#regain_dump_tubes.title = 'Dump values by tube'
+regain_sum = Par('bool','False')
+regain_sum.title = 'Sum before refinement'
+Group('Recalculate Gain').add(regain_apply,regain_iterno,regain_store,regain_store_filename,
+                              regain_load,regain_load_filename,regain_sum)
+
 # Plot Helper
 plh_from = Par('string', 'Plot 2', options = ['Plot 1', 'Plot 2', 'Plot 3'])
 plh_from.title = 'From'
@@ -110,7 +130,15 @@ if normalisation_reference:  #saved as location, need label instead
         if vals: norm_reference.value = vals[0]
 if efficiency_file_uri:
     eff_map.value = efficiency_file_uri
-    
+
+''' New global plots'''
+if 'Plot4' not in globals() or 'Disposed' in str(Plot4.pv):
+    Plot4 = Plot(title='Chi-squared behaviour')
+    Plot4.close = noclose
+if 'Plot5' not in globals() or 'Disposed' in str(Plot5.pv):
+    Plot5 = Plot(title='Final gain values')
+    Plot5.close = noclose
+
 ''' Button Actions '''
 
 # Plot normalisation info
@@ -346,6 +374,7 @@ def __run_script__(fns):
     # save user preferences
     prof_names,prof_values = save_user_prefs()
 
+    elapsed = time.clock()
     # check input
     if (fns is None or len(fns) == 0) :
         print 'no input datasets'
@@ -410,6 +439,15 @@ def __run_script__(fns):
     else:
         vig_normalisation = -1
     group_val = grouping_options[str(output_grouping.value)]
+    # check if gain correction needs to be loaded
+    regain_data = []
+    if regain_load.value:
+        if not regain_load_filename.value:
+            open_error("You have requested loading of gain correction from a file but no file has been specified")
+            return
+        rlf = str(regain_load_filename.value)
+        regain_data = reduction.load_regain_values(rlf)
+
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
     # the first dataset unless it has already been specified.
@@ -492,8 +530,10 @@ def __run_script__(fns):
         # we accumulate the equivalent total monitor 
         # counts for requested normalisation later  
         while frameno <= start_frames:
-            stem = stem_template
-            if group_val is None:
+            if regain_apply.value:   #take them all
+                frameno = start_frames
+                target_val = ""
+            elif group_val is None:
                 target_val = ""
                 final_frame = start_frames-1
                 frameno = start_frames
@@ -510,44 +550,73 @@ def __run_script__(fns):
             cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
             cs.copy_cif_metadata(ds)
             # Store temperature if requested
-            if "%t1" in stem:
+            if "%t1" in stem_template:
                 try:
                     temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"][current_frame_start]
                 except AttributeError:
                     print 'Unable to determine temperature at step %d' % current_frame_start
                 else:
-                    stem = stem.replace('%t1',"%.0fK" % temperature)
-                    print 'Filename is now ' + stem    
-            elif "%vf" in stem:
+                    stem_template = stem_template.replace('%t1',"%.0fK" % temperature)
+                    print 'Filename is now ' + stem_template    
+            elif "%vf" in stem_template:
                 try:
                     temperature = df[fn]["/entry1/sample/tc1/sensor"][current_frame_start]
                 except (AttributeError,TypeError):
                     print 'Unable to determine temperature at step %d' % current_frame_start
                 else:
-                    stem = stem.replace('%vf',"%.0fC" % temperature)
-                    print 'Filename is now ' + stem    
-            print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frameno-1,cs.shape,stth_value)
-            if target_val != "":
-                print 'Corresponding to a target value of ' + `target_val`
-            # sum the input frames
-            print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
-            # es = cs.intg(axis=0)
-            es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
-            if normalise_output:
-                es = es / cs.shape[0]
-                print 'Dividing by %d to match requested normalisation counts' % cs.shape[0]
-            es.copy_cif_metadata(cs)
-            print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
-            Plot1.set_dataset(es)
-            cs = reduction.getVerticalIntegrated(es, axis=0, normalization=vig_normalisation,
+                    stem_template = stem_template.replace('%vf',"%.0fC" % temperature)
+                    print 'Filename is now ' + stem_template    
+
+            # check if we are recalculating gain 
+            if regain_apply.value:
+                # fix the axes
+                cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
+                                                                    "Vertical Pixel",
+                                                                    "Two theta"],
+                            aunits=["Degrees","mm","Degrees"])
+                bottom = int(vig_lower_boundary.value)
+                top = int(vig_upper_boundary.value)
+                dumpfile = None
+                #if regain_dump_tubes.value:
+                #    dumpfile = filename_base+".tubes"
+                gs,gain,esds,chisquared,no_overlaps = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
+                                                                          drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
+                                                                          do_sum=regain_sum.value)
+                if gs is not None:
+                    print 'Have new gains at %f' % (time.clock() - elapsed)
+                    fg = Dataset(gain)
+                    fg.var = esds**2
+                    # set horizontal axis (ideal values)
+                    Plot4.set_dataset(Dataset(chisquared))   #chisquared history
+                    Plot5.set_dataset(fg)   #final gain plot
+                    # now save the file if requested
+                    if regain_store.value and not regain_load.value:
+                        gain_comment = "Gains refined from file %s" % fn
+                        reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment)
+                else:
+                    open_error("Cannot do gain recalculation as the scan ranges do not overlap.")
+                    return
+            if not regain_apply.value:  #already done
+                print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frameno-1,cs.shape,stth_value)
+                if target_val != "":
+                    print 'Corresponding to a target value of ' + `target_val`
+                    # sum the input frames
+                print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
+                # es = cs.intg(axis=0)
+                es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
+                es.copy_cif_metadata(cs)
+                print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
+                Plot1.set_dataset(es)
+
+                gs = reduction.getVerticalIntegrated(es, axis=0, normalization=vig_normalisation,
                                                      bottom = int(vig_lower_boundary.value),
                                                      top=int(vig_upper_boundary.value))
             if target_val != "":
-                cs.title = cs.title + "_" + str(target_val)
+                gs.title = gs.title + "_" + str(target_val)
             try:
-                send_to_plot(cs,Plot2,add=True,change_title=False)
+                send_to_plot(gs,Plot2,add=True,change_title=False)
             except IndexError:  #catch error from GPlot
-                send_to_plot(cs,Plot2,add=False,change_title=True)
+                send_to_plot(gs,Plot2,add=False,change_title=True)
             # Output datasets
             try:
                 val_for_output = int(target_val)
@@ -555,15 +624,15 @@ def __run_script__(fns):
             except:
                 val_for_output = str(target_val)
                 format_for_output = "%s"
-            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+stem+"_"+(format_for_output % val_for_output))
+            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+stem_template+"_"+(format_for_output % val_for_output))
             if output_cif.value:
-                output.write_cif_data(cs,filename_base)
+                output.write_cif_data(gs,filename_base)
             if output_xyd.value:
-                output.write_xyd_data(cs,filename_base,comment="#",extension="xyd")
+                output.write_xyd_data(gs,filename_base,comment="#",extension="xyd")
             if output_fxye.value:
-                output.write_fxye_data(cs,filename_base)
+                output.write_fxye_data(gs,filename_base)
             if output_topas.value:
-                output.write_xyd_data(cs,filename_base,comment="'",extension="xye")
+                output.write_xyd_data(gs,filename_base,comment="'",extension="xye")
             #loop to next group of datasets
             current_frame_start = frameno
             frameno += 1

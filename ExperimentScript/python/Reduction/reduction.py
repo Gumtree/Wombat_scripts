@@ -26,7 +26,7 @@ Issues:
 
 '''
 
-from WOM import *
+from WOM import WOM
 
 from gumpy.nexus import *
 from gumpy.commons.jutils import jintcopy
@@ -499,3 +499,327 @@ def convert_to_twotheta(ds):
     ds.set_axes([new_axis],anames=['Two theta'],aunits=['Degrees'])
     return 'Changed'
 
+#======== Following code based on Echidna code ============#
+
+#
+# Calculate adjusted gain based on matching intensities between overlapping
+# sections of data from different detectors
+def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=None,
+               drop_frames='',drop_wires = '', use_gains = [],do_sum=False, dumpfile=None):
+    """Calculate rescaling factors for pixel columns based on overlapping data
+    regions. Specifying unit weights
+    = False will use the variances contained in the input dataset. Note that
+    the output dataset will have been vertically integrated as part of the
+    algorithm. The vertical integration limits are set by top and bottom, if
+    None all points are included.  Drop_frames is a
+    specially-formatted string giving a list of frames to be ignored. Drop_wires
+    is a similarly-formatted string giving a list of vertical wires to be ignored. If 
+    use_gains is not empty, these [val,esd] values will be used instead of those
+    obtained from the iteration routine. Dumpfile, if set, will output
+    starting values for use by other routines. do_sum will sum each
+    detector step before refining."""
+    import time
+    from Reduction import overlap
+    # Get sensible values
+    if top is None: top = ds.shape[1]-1
+    if bottom is None: bottom = 0
+    # Dimensions are step,vertical,horizontal
+    b = ds[:,bottom:top,:].intg(axis=1).get_reduced()
+    # Determine horizontal pixels per vertical wire interval
+    wire_pos = ds.axes[-1]
+    wire_sep = abs(wire_pos[0]-wire_pos[-1])/(len(wire_pos)-1)
+    #print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
+    det_steps = ds.axes[0]
+    bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
+    print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
+    pixel_step = int(round(wire_sep/bin_size))
+    bin_size = wire_sep/pixel_step
+    print '%f wire separation, %d steps before overlap, ideal binsize %f' % (wire_sep,pixel_step,bin_size)
+    dropped_frames = parse_ignore_spec(drop_frames)
+    dropped_cols = parse_ignore_spec(drop_wires)
+    # Drop frames from the end as far as we can
+    for empty_no in range(b.shape[0]-1,0,-1):
+        print "Trying %d" % empty_no
+        if empty_no not in dropped_frames:
+            break
+        dropped_frames.remove(empty_no)
+    print "All frames after %d empty so dropped" % empty_no
+    b = b[:empty_no+1]
+    # Do we need to add dummy missing frames?
+    extra_steps = b.shape[0]%pixel_step
+    if extra_steps > 0:
+        start_drop = b.shape[0]
+        # gumpy has no resize
+        new_b = zeros([((b.shape[0]/pixel_step)+1)*pixel_step,b.shape[1]])
+        new_b[:b.shape[0]] = b
+        b = new_b
+        extra_dropped_frames = range(start_drop,b.shape[0])
+        print "Filled out array from %d to %d with dummy frames" % (start_drop,b.shape[0])
+        dropped_frames |= set(extra_dropped_frames)
+    else:
+        extra_dropped_frames = []
+    # Zero out dropped frames
+    print 'Dropped frames: ' + `dropped_frames`
+    b_zeroed = copy(b)
+    # Make a simple array to work out which sectors are missing frames
+    frame_check = array.ones(b.shape[0])
+    # Additionally zero out all matching steps
+    all_zeroed = copy(b)
+    region_starts = [a*pixel_step for a in range(b.shape[0]/pixel_step)]
+    for frame_no in dropped_frames:
+        b_zeroed[frame_no] = 0
+        b_zeroed.var[frame_no] = 0
+        dropped_step = frame_no%pixel_step
+        ref_drop_steps = [r+dropped_step for r in region_starts]
+        for drop_step in ref_drop_steps:
+            frame_check[drop_step] = 0
+            all_zeroed[drop_step] = 0
+            all_zeroed.var[drop_step] = 0
+    # Now drop out whole detectors
+    for wire_no in dropped_cols:
+        b_zeroed[:,wire_no] = 0
+        b_zeroed.var[:,wire_no] = 0
+        all_zeroed[:,wire_no] = 0
+        all_zeroed.var[:,wire_no] = 0
+    c = all_zeroed.reshape([b.shape[0]/pixel_step,pixel_step,b.shape[-1]])
+    frame_check = frame_check.reshape([b.shape[0]/pixel_step,pixel_step])
+    frame_sum = frame_check.intg(axis=1)
+    print `b.shape` + "->" + `c.shape`
+    print 'Relative no of frames: ' + `frame_sum`
+    mult_fact = frame_sum[0]*len(frame_sum)
+    print 'Multiplication factor at end: %d' % mult_fact
+    # Output the starting data for external use
+    if dumpfile is not None:
+        dump_wire_intensities(dumpfile,raw=b_zeroed)
+    if len(use_gains)==0:   #we have to calculate them
+        if c.shape[0] == 1:   #can't be done, there is no overlap
+            return None,None,None,None,None
+        if do_sum:
+            # sum the individual unoverlapped sections. Reshape is required as the
+            # intg function removes the dimension
+            d = c.intg(axis=1).reshape([c.shape[0],1,c.shape[2]]) #array of [rangeno,stepno,tubeno]
+            # normalise by the number of frames in each section
+        else:
+            d = c  #no op
+        # Note gumpy can't do transposes of more than two axes at once
+        e = d.transpose((2,0))  #array of [wireno,stepno,section]
+        e = e.transpose((1,2))  #array of [wireno,section,stepno]
+        print "Data shape: " + repr(e.shape)
+        print "Check shape: " + repr(frame_sum.shape)
+        # ignore initial wires completely
+        ignore = 0
+        for one_wire in range(len(e)):
+           if not e[one_wire].any():   #all zero
+               #print "Ignoring wire %d" % one_wire
+               ignore+=1      #mask it out
+           else:
+               break
+        ignore += len(frame_sum)  #to avoid any contamination
+        print "Ignoring all wires up to %d" % ignore
+        gain,dd,interim_result,residual_map,chisquared,oldesds,first_ave,weights = \
+            iterate_data(e[ignore:],iter_no=iterno,unit_weights=unit_weights,pixel_mask=None)
+    else:        #we have been provided with gains
+        gain = use_gains
+        chisquared=0.0
+    # calculate errors based on full dataset
+    # First get a full model
+    reshape_ds = b_zeroed.reshape([b.shape[0]/pixel_step,pixel_step,b.shape[-1]])
+    start_ds = reshape_ds.transpose((2,0))[ignore:] #array of [wireno,stepno,section]
+    start_ds = start_ds.transpose((1,2))
+    start_var = start_ds.var
+    # Our new pixel mask has to have all of the steps in
+    pixel_mask = array.ones_like(start_ds)
+    for one_wire in range(len(start_ds)):
+        if not start_ds[one_wire].any():   #all zero
+            pixel_mask[one_wire] = 0      #mask it out
+   # Normalise gains so that average is 1.0
+    gain = gain*len(gain)/gain.sum()
+    model,wd,model_var,esds = overlap.apply_gain(start_ds,1.0/start_var,gain,
+                                            calc_var=True,bad_steps=dropped_frames,pixel_mask=pixel_mask)
+    # model and model_var have shape wireno*pixel_step + no_steps (see shift_tube_add_new)
+    print 'Have full model and errors at %f' % time.clock()
+    # step size could be less than pixel_step if we have a short non-overlap scan
+    real_step = pixel_step
+    if len(det_steps)< pixel_step:
+        real_step = len(det_steps)
+        # and we have to prune the output data too
+        holeless_model = zeros([real_step*start_ds.shape[0]])
+        holeless_var = zeros_like(holeless_model)
+        for wire_set in range(start_ds.shape[0]):
+            holeless_model[wire_set*real_step:(wire_set+1)*real_step]=model[wire_set*pixel_step:(wire_set+1)*pixel_step]    
+            holeless_var[wire_set*real_step:(wire_set+1)*real_step]=model_var[wire_set*pixel_step:(wire_set+1)*pixel_step]    
+        model = holeless_model
+        model_var = holeless_var
+    model *= mult_fact
+    model_var = model_var*mult_fact*mult_fact
+    cs = Dataset(model)
+    cs.var = model_var
+    mult_string =  """Intensities were
+            multiplied by %d to approximate total intensity measured at each point.""" % mult_fact
+    # Now build up the important information
+    cs.title = ds.title
+    cs.copy_cif_metadata(ds)
+    # construct the axes
+    axis = arange(len(model))
+    new_axis = axis*bin_size + ds.axes[0][0] + ignore*pixel_step*bin_size
+    axis_string = """Following application of gain correction, two theta values were 
+    calculated assuming a step size of %8.3f starting at %f.""" % (bin_size,ds.axes[0][0]+ignore*pixel_step*bin_size)
+    cs.set_axes([new_axis],anames=['Two theta'],aunits=['Degrees'])
+    print 'New axis goes from %f to %f in %d steps' % (new_axis[0],new_axis[-1],len(new_axis))
+    print 'Total %d points in output data' % len(cs)
+    # prepare info for CIF file
+    import math
+    detno = map(lambda a:"%d" % a,range(len(gain)))
+    gain_as_strings = map(lambda a:"%.4f" % a,gain)
+    gain_esd = ["%.4f" % a for a in esds]
+    cs.harvest_metadata("CIF").AddCifItem((
+        (("_[local]_wire_number","_[local]_refined_gain","_[local]_refined_gain_esd"),),
+        ((detno,gain_as_strings,gain_esd),))
+        )
+    if len(use_gains)==0:
+        info_string = "After vertical integration between pixels %d and %d," % (bottom,top) + \
+        """ individual wire gains were iteratively refined using the Ford/Rollett algorithm (Acta Cryst. (1968) B24,293). 
+            Final gains are stored in the _[local]_refined_gain loop.""" + mult_string + axis_string
+    else:
+        info_string =  "After vertical integration between pixels %d and %d," % (bottom,top) + \
+        " individual wire gains were corrected based on a previous iterative refinement using the Ford/Rollett algorithm. The gains used" + \
+        "are stored in the _[local]_refined_gain loop." + mult_string + axis_string
+    cs.add_metadata("_pd_proc_info_data_reduction",info_string,append=True)
+    return cs,gain,esds,chisquared,c.shape[0]
+
+# Do an iterative refinement of the gain values. We calculate errors only when chisquared shift is
+# small, and aim for a shift/esd of <0.1
+def iterate_data(dataset,iter_no=5,pixel_mask=None,plot_clear=True,algo="FordRollett",unit_weights=False):
+    """Iteratively refine the gain. The pixel_step is the number of steps
+    a wire takes before it overlaps with the next wire. Parameter
+    'dataset' is an n x m x s array, for m distinct angular regions of
+    s steps each covered by wire number n.  Note that this layout is
+    convenient as a reshape([m,s]) operation applied to the flat model
+    array will put sequential values together. iter_no is the number
+    of iterations, if negative the routine will iterate until
+    chisquared does not change by more than 0.01 or abs(iter_no)
+    steps, whichever comes first. Pixel_mask has a zero for any wire
+    that should be excluded. Algo 'ford rollett' applies the algorithm
+    of Ford and Rollet, Acta Cryst. (1968) B24, p293
+    """
+    import overlap
+    start_gain = array.ones(len(dataset))
+    if unit_weights is True:
+        weights = array.ones_like(dataset)
+    else:
+        weights = 1.0/dataset.var
+    # Use weights as the mask
+    if pixel_mask is not None:
+        weights = weights*pixel_mask
+    if algo == "FordRollett":
+        gain,first_ave,ar,esds,k = overlap.find_gain_fr(dataset,weights,start_gain,pixel_mask=pixel_mask)
+    else:
+        raise ValueError("No such algorithm: %s" % algo)
+    chisquared,residual_map = overlap.get_statistics_fr(gain,first_ave,dataset,dataset.var,pixel_mask)
+    old_result = first_ave    #store for later
+    chisq_history = [chisquared]
+    k_history = [k]
+    if iter_no > 0: 
+        no_iters = iter_no
+    else:
+        no_iters = abs(iter_no)
+    for cycle_no in range(no_iters+1):
+        esdflag = (cycle_no == no_iters)  # need esds as well, and flags the last cycle
+        print 'Cycle %d' % cycle_no
+        if cycle_no > 3 and iter_no < 0:
+            esdflag = (esdflag or (abs(chisq_history[-2]-chisq_history[-1]))<0.005)
+        if algo == "FordRollett":
+            gain,interim_result,ar,esds,k = overlap.find_gain_fr(dataset,weights,gain,arminus1=ar,pixel_mask=pixel_mask,errors=esdflag)
+        chisquared,residual_map = overlap.get_statistics_fr(gain,interim_result,dataset,dataset.var,pixel_mask)
+        chisq_history.append(chisquared)
+        k_history.append(k)
+        if esdflag is True:
+            break
+    print 'Chisquared: ' + `chisq_history`
+    print 'K: ' + `k_history`
+    print 'Total cycles: %d' % cycle_no
+    print 'Maximum shift/error: %f' % max(ar/esds)
+    return gain,dataset,interim_result,residual_map,chisq_history,esds,first_ave,weights
+
+def test_iterate_data():
+    import random,math
+    """Generate a simple dataset and check that it refines to reasonable values"""
+    # Dimensions 5 x 2 x 10 i.e. 5 tubes, 20 steps overlapping after 10
+    true_gains = rand(20) + 0.5   #20 gains between 0.5 and 1.5
+    true_vals = ones([210])*100.0  #background is 100
+    peak_1 = make_peak(4)
+    true_vals[25:25+len(peak_1)] += 1000*peak_1
+    true_vals[95:95+len(peak_1)] += 550*peak_1
+    true_vals[143:143+len(peak_1)] += 2000*peak_1
+    start_data = ones([20,20])     #20 tubes take 20 steps
+    for i in range(len(start_data)):
+        start_data[i] = true_vals[i*10:i*10+20]*true_gains[i]
+        start_data[i] = [random.gauss(a,math.sqrt(a)) for a in start_data[i]] 
+    start_data = Dataset(start_data).reshape([20,2,10])
+    print 'Starting array, first 3: ' + repr(start_data.storage[:3])
+    g,d,ir,rm,hist,esds,fa,wts = iterate_data(start_data,10,20)
+    return g,true_gains,ir,true_vals
+    
+def load_regain_values(filename):
+    """Load a list of gain values derived from a previous call to do_overlap"""
+    gain_lines = open(filename,"r").readlines()
+    gain_lines = [l.split() for l in gain_lines if len(l)>0 and l[0]!='#'] #remove comments and blanks
+    tubes,gain_vals = zip(*[(int(l[0]),float(l[1])) for l in gain_lines])
+    return Array(gain_vals)
+
+def store_regain_values(filename,gain_vals,gain_comment=""):
+    """Store values calculated from the do_overlap routine"""
+    f = open(filename,"w")
+    f.write("#Gain values calculated by Wombat reduction routine\n")
+    f.write("#"+gain_comment+"\n")
+    for pos,gain in zip(range(len(gain_vals)),gain_vals):
+        f.write("%d   %8.3f\n" % (pos,gain))
+    f.close()
+
+def dump_gain_file(filename,raw=None,gain=None,model=None,chisq=[],name_prefix=""):
+    """Dump data for external gain refinement. We are provided a [sector,steps,tubeno]
+    array, where each tubes scan is split into sectors of steps length."""
+    import os
+    dirname,basename = os.path.split(filename)
+    full_filename = os.path.join(dirname,name_prefix+basename)
+    outfile = open(full_filename,"w")
+    d = raw
+    print 'Dumping gains to %s' % full_filename
+    stepsize = d.shape[1]
+    # Header
+    outfile.write("#Wire Sectors Steps\n")
+    outfile.write("%d %d %d\n" % (d.shape[-1],d.shape[0],d.shape[1]))
+    # raw data
+    for wire_no in range(d.shape[-1]):
+        for sector_no in range(d.shape[0]):
+            for step_no in range(stepsize):
+                    outfile.write("%8.3f %7.3f\n" % (d.storage[sector_no,step_no,wire_no],d.var[sector_no,step_no,wire_no]))
+    outfile.write("#intensities\n")
+    for intensity in model:
+        outfile.write("%8.3f\n" % intensity)
+    outfile.write("#gains\n")
+    for g in gain:
+        outfile.write("%8.3f\n" % g)
+    outfile.write("#chisq\n")
+    for c in chisq:
+        outfile.write("%8.3f\n" % c)
+    outfile.close()
+
+def parse_ignore_spec(ignore_string):
+    """A helper function to parse a string of form a:b,c:d returning
+    (a,b),(c,d)"""
+    import re
+    p = ignore_string.split(',')
+    q = map(lambda a:a.split(':'),p)
+    # q is now  a sequence of string values
+    final = []
+    for strval in q:
+        try:
+            ranges = map(lambda a:int(a.strip()),strval)
+            if len(ranges) == 1:
+                final.append(ranges[0])
+            else:
+                final = final + range(ranges[0],ranges[1]+1)
+        except ValueError:
+            pass
+    return set(final)   # a set to avoid duplications
