@@ -39,11 +39,11 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0,low_frame=0
     # Fail early
     print 'Using %s and %s' % (str(vanad.location),str(backgr.location))
     # Subtract the background if requested
-    check_val = backgr[8,64,64]
+    #check_val = backgr[8,64,64]
     if norm_ref is not None:
         norm_target = reduction.applyNormalization(vanad,norm_ref,-1)
         # store for checking later
-        check_val = backgr[8,64,64]
+        #check_val = backgr[8,64,64]
         nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
         # 
         print 'Normalising background to %f'  % norm_target
@@ -53,7 +53,7 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0,low_frame=0
         pure_vanad = pure_vanad[low_frame:high_frame]
         print 'Only using part of supplied data: %d to %d, new length %d' % (low_frame,high_frame,len(pure_vanad))
     # pure_vanad.copy_cif_metadata(vanad)
-    print 'Check: %f, %f -> %f' % (vanad[8,64,64],check_val,pure_vanad[8,64,64])
+    #print 'Check: %f, %f -> %f' % (vanad[8,64,64],check_val,pure_vanad[8,64,64])
     # This is purely for the fudge map
     d1,d2,d3,fudge_map = nonzero_gain(pure_vanad)
     pure_vanad = pure_vanad.intg(axis=0)   # sum over the detector step axis
@@ -77,8 +77,70 @@ def calc_eff_naive(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0,low_frame=0
     final_map.var = eff_error
     return final_map, pix_ok_map, fudge_map
 
+def calc_eff_flat(vanad,backgr,norm_ref="bm3_counts",var_cutoff=3.0):
+    """Calculate efficiencies given 2D vanadium and background hdf files. 
+
+    The approach of this simple version is, after subtracting background, to assume that
+    the frame intensity is proportional to the gain.
+
+    Pixels greater than esd_cutoff*error will not contribute.
+    """
+
+    import stat,datetime,time,math
+    starttime = time.time()
+    omega = vanad["mom"][0]  # for reference
+    takeoff = vanad["mtth"][0]
+    # TODO: intelligent determination of Wombat wavelength
+    #crystal = AddCifMetadata.pick_hkl(omega-takeoff/2.0,"335")  #post April 2009 used 335 only
+    #
+    # Get important information from the basic files
+    #
+    # Get file times from timestamps as older NeXuS files had bad values here
+    #
+    #wl = AddCifMetadata.calc_wavelength(crystal,takeoff)
+    vtime = os.stat(vanad.location)[stat.ST_CTIME]
+    vtime = datetime.datetime.fromtimestamp(vtime)
+    vtime = vtime.strftime("%Y-%m-%dT%H:%M:%S%z")
+    btime = os.stat(backgr.location)[stat.ST_CTIME]
+    btime = datetime.datetime.fromtimestamp(btime)
+    btime = btime.strftime("%Y-%m-%dT%H:%M:%S%z")
+    # This step required to insert our metadata hooks into the dataset object
+    AddCifMetadata.add_metadata_methods(vanad)
+    AddCifMetadata.add_metadata_methods(backgr)
+    # Fail early
+    print 'Using %s and %s' % (str(vanad.location),str(backgr.location))
+    # Subtract the background if requested
+    if norm_ref is not None:
+        norm_target = reduction.applyNormalization(vanad,norm_ref,-1)
+        # store for checking later
+        #check_val = backgr[8,64,64]
+        nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
+        # 
+        print 'Normalising background to %f'  % norm_target
+    pure_vanad = (vanad - backgr).get_reduced()    #remove the annoying 2nd dimension
+    # calculate typical variability across the detector
+    ave = pure_vanad.sum()/pure_vanad.size
+    stdev = math.sqrt(((pure_vanad-ave)**2).sum()/pure_vanad.size)
+    whi = ave + var_cutoff*stdev
+    wlo = ave - var_cutoff*stdev
+    eff_array = array.zeros_like(pure_vanad)
+    eff_array[pure_vanad< whi and pure_vanad > wlo] = pure_vanad
+    eff_array[pure_vanad > 0] = 1.0/eff_array
+    eff_error = pure_vanad.var * (eff_array**4)
+    ave_eff = eff_array.sum()/(eff_array.size)
+    eff_array /= ave_eff
+    eff_error /= ave_eff**2
+    # pixel OK map...anything less than var_cutoff from the average
+    pix_ok_map = array.ones_like(eff_array)
+    pix_ok_map[pure_vanad > whi or pure_vanad < wlo] = 0.0  
+    print "Variance not OK pixels %d" % (pix_ok_map.sum() - pix_ok_map.size)
+    final_map = Dataset(eff_array)
+    final_map.var = eff_error
+    fudge_map = pix_ok_map
+    return final_map, pix_ok_map, fudge_map
+
 def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
-                   low_frame=0,high_frame=967):
+                   low_frame=0,high_frame=967,eff_sig=10):
     """Calculate efficiencies given vanadium and background hdf files. 
 
     The approach of this new version is to calculate relative efficiencies for each pixel at each step,
@@ -116,7 +178,7 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
     if norm_ref is not None:
         norm_target = reduction.applyNormalization(vanad,norm_ref,-1)
         # store for checking later
-        check_val = backgr[8,64,64]
+        #check_val = backgr[8,64,64]
         nn = reduction.applyNormalization(backgr,norm_ref,norm_target)
         # 
         print 'Normalising background to %f'  % norm_target
@@ -127,7 +189,7 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
         print 'Only using part of supplied data: %d to %d, new length %d' % (low_frame,high_frame,len(pure_vanad))
     stth = pure_vanad.stth   #store for later
     # pure_vanad.copy_cif_metadata(vanad)
-    print 'Check: %f, %f -> %f' % (vanad[8,64,64],check_val,pure_vanad[8,64,64])
+    #print 'Check: %f, %f -> %f' % (vanad[8,64,64],check_val,pure_vanad[8,64,64])
     nosteps = pure_vanad.shape[0]
     # generate a rough correction
     simple_vanad = pure_vanad.intg(axis=0)   # sum over the detector step axis
@@ -142,7 +204,7 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
     # rigourous routine could do this twice, for the first and last frames
     frame_last = (pure_vanad.storage[nosteps-1]*eff_array).intg(axis=0)  #sum vertically
     print 'Final frame max, min values after correction: %f %f' % (max(frame_last),min(frame_last))# find the peaks, get a background too
-    peak_list,back_lev = peak_find(frame_last)
+    peak_list,back_lev = peak_find(frame_last,sig_val=eff_sig)
     # Prepare return information
     peak_pos = [(stth[nosteps-1]+a*0.125,b*0.125) for (a,b) in peak_list]
     info_list = "List of peaks found and purged:\n Position  Purge range"
@@ -173,20 +235,20 @@ def calc_eff_mark2(vanad,backgr,norm_ref="bm3_counts",bottom = 0, top = 127,
     #         "Vanadium peaks at the following positions were purged:\n Pos  Range\n " +  info_list
     #        },non_zero_contribs
 
-def peak_find(intensity_list,min_val=100):
-    """Return a list of (pos,fwhm) containing all peaks at least 3 sig
+def peak_find(intensity_list,min_val=100,sig_val=10):
+    """Return a list of (pos,fwhm) containing all peaks at least sig_val* sig
     above the background"""
     import math,sys
     # remove all very low values
     backave = intensity_list[intensity_list>min_val].sum()/intensity_list[intensity_list>min_val].size
-    print 'Average background in one frame %f' % backave
+    print 'Peak search:average background in one frame %f' % backave
     length = len(intensity_list)
     frame_temp = copy(intensity_list)   #copy
     frame_temp = frame_temp[10:-10] #avoid edge effects
     peak_list = []
     while True:
         peakval = frame_temp.max()
-        if (peakval-backave)< (10*math.sqrt(backave)): break
+        if (peakval-backave)< (sig_val*math.sqrt(backave)): break
         # no arg_pos or arg_sort, so we do it by hand
         max_pos = -1
         while True:

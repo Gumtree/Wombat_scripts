@@ -17,6 +17,10 @@ rot_table = {'Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
              'Euler omega':('/entry1/sample/euler_omega','Omega','Degrees'),
              'Sample temperature (Magnet stick 1)':('/entry1/sample/tc1/Loop2/sensor',
                                             'Temperature','Kelvin'),
+             'Sample temperature (Vacuum furnace)':('/entry1/sample/tc1/sensor',
+                                            'Temperature','Celcius'),
+             'Sample temperature (CF7/8)':('/entry1/sample/tc1/sensor/sensorValueA',
+                                           'Temperature','Celcius'),
              'Detector step':('/entry1/sample/azimuthal_angle','stth','Degrees')}
 rot_axis = Par('string','Magnet rotation',options = rot_table.keys())
 Group('Axis setup').add(rot_axis)
@@ -441,6 +445,12 @@ def __run_script__(fns):
                 units = 'Step Number'
         stth = ds.stth[0]
         vert_axis_name = rot_table[str(rot_axis.value)][1]
+        print '%s:%s' % (vert_axis_name,repr(rot_values))
+        # Work around gumtree enforcing increasing axes
+        if rot_values[0] > rot_values[-1]:
+            pass
+            #rs = rs[:,::-1]
+            #rs.copy_cif_metadata(ds)
         rs.set_axes([rot_values,stth + ds.axes[2]],['Angle',vert_axis_name],['Degrees',units])
         Plot1.set_dataset(rs)
         Plot1.title = rs.title

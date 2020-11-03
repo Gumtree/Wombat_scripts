@@ -40,7 +40,9 @@ eff_name = Par('string', date.today().strftime("eff_%Y_%m_%d.gumtree.hdf"))
 eff_name.title = 'Filename'
 eff_technique = Par('string','No V peaks',options=['No V peaks','Naive'])
 eff_technique.title = 'Calculation'
-Group('Efficiency Correction Map').add(eff_make, eff_name,eff_technique)
+eff_sig = Par('int',10)
+eff_sig.title = 'Sigma multiplier above backgr for peak search'
+Group('Efficiency Correction Map').add(eff_make, eff_name,eff_technique,eff_sig)
 
 # Unusual parameters
 tool_frame_low = Par('int',0)
@@ -132,16 +134,14 @@ def __run_script__(fns):
     bkg.location = str(in_bkg_run.value)
 
     # check if input is correct
-    if van.ndim != 3:
-        raise AttributeError('van.ndim != 3')
-    if bkg.ndim != 3:
-        raise AttributeError('van.ndim != 3')
-    if van.axes[0].title != 'run_number':
-        raise AttributeError('van.axes[0].title != run_number')
-    if bkg.axes[0].title != 'run_number':
-        raise AttributeError('bkg.axes[0].title != run_number')
+    do_flat_calc = (van.ndim == 2)
     if van.shape != bkg.shape: # checks number of frames and detector pixel dimensions
         raise AttributeError('van.shape != bkg.shape')
+
+    if not do_flat_calc and van.axes[0].title != 'run_number':
+        raise AttributeError('van.axes[0].title != run_number')
+    if not do_flat_calc and bkg.axes[0].title != 'run_number':
+        raise AttributeError('bkg.axes[0].title != run_number')
 
     # check if input needs to be normalized
     if norm_apply.value:
@@ -158,11 +158,14 @@ def __run_script__(fns):
         if str(eff_technique.value)=='No V peaks':
             eff, pix_ok,fudge_map,fl = calibrations.calc_eff_mark2(van,bkg,norm_ref=norm_ref,
                                                       low_frame=low_lim,
-                                                      high_frame=high_lim)
-        elif str(eff_technique.value)=='Naive':
+                                                      high_frame=high_lim,
+                                                      eff_sig=eff_sig.value)
+        elif str(eff_technique.value)=='Naive' and not do_flat_calc:
             eff, pix_ok,fudge_map = calibrations.calc_eff_naive(van,bkg,norm_ref=norm_ref,
                                                       low_frame=low_lim,
                                                       high_frame=high_lim)
+        elif str(eff_technique.value)=='Naive':
+            eff, pix_ok,fudge_map = calibrations.calc_eff_flat(van,bkg,norm_ref=norm_ref)
         else:
             raise ValueError, 'Efficiency calculation technique not recognised'
         var_check = Dataset(fudge_map)

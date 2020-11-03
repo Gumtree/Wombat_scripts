@@ -423,10 +423,12 @@ def __run_script__(fns):
              all_stth = ds.stth[:] # also save for later
         except TypeError:
             stth_value = ds.stth
+            all_stth= [stth_value]
         if ds.ndim > 3:
             rs = ds.get_reduced()
         else:
             rs = ds
+        print "all_stth is %s" % repr(all_stth) 
         rs = rs * 1.0  #convert to float
         rs.copy_cif_metadata(ds)
         # check if normalized is required 
@@ -464,7 +466,7 @@ def __run_script__(fns):
                  avetemp = sum(temperature)/len(temperature)
              except TypeError:
                  avetemp = temperature
-             stem_template = stem_template.replace('%t2',"%.0fK" % avetemp)
+             stem_template = stem_template.replace('%t2',"%.1fK" % avetemp)
         if '%vf' in stem_template and group_val is None:
              # get tc1
              temperature = df[fn]["/entry1/sample/tc1/sensor"]
@@ -547,7 +549,13 @@ def __run_script__(fns):
             except IndexError:  #catch error from GPlot
                 send_to_plot(cs,Plot2,add=False,change_title=True)
             # Output datasets
-            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+stem+"_"+str(target_val))
+            try:
+                val_for_output = int(target_val)
+                format_for_output = "%03d"
+            except:
+                val_for_output = str(target_val)
+                format_for_output = "%s"
+            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+stem+"_"+(format_for_output % val_for_output))
             if output_cif.value:
                 output.write_cif_data(cs,filename_base)
             if output_xyd.value:
