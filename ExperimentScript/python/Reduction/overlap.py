@@ -127,7 +127,7 @@ def shift_mult_fr_add(gain_array,model_array,obs_array,weight_array,pixel_mask):
           scale_factors.get_section([seclen*wire_no],[wire_steps])).sum()
       if a_p_array[wire_no] == 0:
          print "FAIL: aparray = 0 for wire number %d" % wire_no
-         print "wt_section = " + `wt_section[wire_no]`
+         print "wt_section = " + `wt_section`
          print "mod_section = " + `mod_section`
          return None
    return a_p_array

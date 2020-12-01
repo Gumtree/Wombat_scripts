@@ -615,16 +615,16 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
            else:
                break
         ignore += len(frame_sum)  #to avoid any contamination
-        print "Ignoring all wires up to %d" % ignore
+        print "Ignoring all wires within %d of edges" % ignore
         gain,dd,interim_result,residual_map,chisquared,oldesds,first_ave,weights = \
-            iterate_data(e[ignore:],iter_no=iterno,unit_weights=unit_weights,pixel_mask=None)
+            iterate_data(e[ignore:-ignore],iter_no=iterno,unit_weights=unit_weights,pixel_mask=None)
     else:        #we have been provided with gains
         gain = use_gains
         chisquared=0.0
     # calculate errors based on full dataset
     # First get a full model
     reshape_ds = b_zeroed.reshape([b.shape[0]/pixel_step,pixel_step,b.shape[-1]])
-    start_ds = reshape_ds.transpose((2,0))[ignore:] #array of [wireno,stepno,section]
+    start_ds = reshape_ds.transpose((2,0))[ignore:-ignore] #array of [wireno,stepno,section]
     start_ds = start_ds.transpose((1,2))
     start_var = start_ds.var
     # Our new pixel mask has to have all of the steps in
