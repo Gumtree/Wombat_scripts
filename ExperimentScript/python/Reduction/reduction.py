@@ -505,7 +505,8 @@ def convert_to_twotheta(ds):
 # Calculate adjusted gain based on matching intensities between overlapping
 # sections of data from different detectors
 def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=None,
-               drop_frames='',drop_wires = '', use_gains = [],do_sum=False, dumpfile=None):
+               drop_frames='',drop_wires = '', use_gains = [],do_sum=False, dumpfile=None,
+               fix_ignore=0):
     """Calculate rescaling factors for pixel columns based on overlapping data
     regions. Specifying unit weights
     = False will use the variances contained in the input dataset. Note that
@@ -517,7 +518,10 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
     use_gains is not empty, these [val,esd] values will be used instead of those
     obtained from the iteration routine. Dumpfile, if set, will output
     starting values for use by other routines. do_sum will sum each
-    detector step before refining."""
+    detector step before refining. `fix_ignore` sets the number of wires that are
+    ignored at the beginning and end of the scan and must match the number used
+    for any pre-determined values in `use_gains`. `fix_ignore` is ignored if `use_gains`
+    is empty."""
     import time
     from Reduction import overlap
     # Get sensible values
@@ -620,6 +624,7 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
             iterate_data(e[ignore:-ignore],iter_no=iterno,unit_weights=unit_weights,pixel_mask=None)
     else:        #we have been provided with gains
         gain = use_gains
+        ignore = fix_ignore
         chisquared=0.0
     # calculate errors based on full dataset
     # First get a full model
@@ -685,7 +690,7 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
         " individual wire gains were corrected based on a previous iterative refinement using the Ford/Rollett algorithm. The gains used" + \
         "are stored in the _[local]_refined_gain loop." + mult_string + axis_string
     cs.add_metadata("_pd_proc_info_data_reduction",info_string,append=True)
-    return cs,gain,esds,chisquared,c.shape[0]
+    return cs,gain,esds,chisquared,c.shape[0],ignore
 
 # Do an iterative refinement of the gain values. We calculate errors only when chisquared shift is
 # small, and aim for a shift/esd of <0.1
@@ -764,14 +769,16 @@ def load_regain_values(filename):
     """Load a list of gain values derived from a previous call to do_overlap"""
     gain_lines = open(filename,"r").readlines()
     gain_lines = [l.split() for l in gain_lines if len(l)>0 and l[0]!='#'] #remove comments and blanks
-    tubes,gain_vals = zip(*[(int(l[0]),float(l[1])) for l in gain_lines])
-    return Array(gain_vals)
+    ignored = int(gain_lines[0][1])
+    tubes,gain_vals = zip(*[(int(l[0]),float(l[1])) for l in gain_lines[1:]])
+    return Array(gain_vals),ignored
 
-def store_regain_values(filename,gain_vals,gain_comment=""):
+def store_regain_values(filename,gain_vals,gain_comment="",ignored=0):
     """Store values calculated from the do_overlap routine"""
     f = open(filename,"w")
     f.write("#Gain values calculated by Wombat reduction routine\n")
     f.write("#"+gain_comment+"\n")
+    f.write("Ignored: %d\n" % ignored) 
     for pos,gain in zip(range(len(gain_vals)),gain_vals):
         f.write("%d   %8.3f\n" % (pos,gain))
     f.close()

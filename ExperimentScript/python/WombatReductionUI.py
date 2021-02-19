@@ -441,13 +441,14 @@ def __run_script__(fns):
     group_val = grouping_options[str(output_grouping.value)]
     # check if gain correction needs to be loaded
     regain_data = []
+    pre_ignore = 0
     if regain_load.value:
         if not regain_load_filename.value:
             open_error("You have requested loading of gain correction from a file but no file has been specified")
             return
         rlf = str(regain_load_filename.value)
-        regain_data = reduction.load_regain_values(rlf)
-
+        regain_data,pre_ignore = reduction.load_regain_values(rlf)
+        print "Loaded gain data from %s, first/last %d wires ignored" % (rlf,pre_ignore)
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
     # the first dataset unless it has already been specified.
@@ -579,9 +580,9 @@ def __run_script__(fns):
                 dumpfile = None
                 #if regain_dump_tubes.value:
                 #    dumpfile = filename_base+".tubes"
-                gs,gain,esds,chisquared,no_overlaps = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
+                gs,gain,esds,chisquared,no_overlaps,ignored = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
                                                                           drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
-                                                                          do_sum=regain_sum.value)
+                                                                                   do_sum=regain_sum.value, fix_ignore=pre_ignore)
                 if gs is not None:
                     print 'Have new gains at %f' % (time.clock() - elapsed)
                     fg = Dataset(gain)
@@ -592,7 +593,8 @@ def __run_script__(fns):
                     # now save the file if requested
                     if regain_store.value and not regain_load.value:
                         gain_comment = "Gains refined from file %s" % fn
-                        reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment)
+                        reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
+                                                      ignored=ignored)
                 else:
                     open_error("Cannot do gain recalculation as the scan ranges do not overlap.")
                     return
