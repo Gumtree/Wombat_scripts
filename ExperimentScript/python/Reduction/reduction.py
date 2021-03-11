@@ -200,6 +200,51 @@ def getSummed(ds, applyStth=0.0):
     print 'Output dtype' + `rs.dtype`
     return rs
 
+def getStepSummed(ds):
+    """ As for `getSummed`, but additionally offsets each frame to model 2th
+    movement between frames. `stth` is the 2th offset of the first frame. """
+    import time
+    print 'step summation of', ds.title
+
+    # check arguments
+    if ds.ndim != 3:
+        raise AttributeError('ds.ndim != 3')
+    if ds.axes[2].title != 'x_pixel_angular_offset':
+        raise AttributeError('ds.axes[2].title != x_pixel_angular_offset')
+
+    # calculate step size as a proportion of x pixel step
+    wire_sep,pixel_step,bin_size = get_wire_step(ds)
+    # sum first dimension of storage and variance
+    frame_count = ds.shape[0]
+    # detect single frames
+    if frame_count == 1:
+        rs = ds.get_reduced()
+    else:
+        extra_width = pixel_step * (frame_count-1)
+        new_shape = ds.shape[1],ds.shape[2]+ extra_width
+        base_data = zeros(new_shape)
+        base_var = zeros(new_shape)
+        for frame in xrange(0, frame_count):
+            start_index = frame*pixel_step
+            finish_index = ds.shape[2]+frame*pixel_step
+            base_data[:,start_index:finish_index]  += ds.storage[frame]
+            base_var[:,start_index:finish_index]   += ds.var[frame]
+
+        # finalize result
+        rs = Dataset(base_data)
+        rs.var = base_var
+        new_axis = zeros(ds.axes[2].shape[0]+extra_width)
+        new_axis[0:ds.axes[2].shape[0]] = ds.axes[2]+ds.axes[0][0]
+        new_axis[ds.axes[2].shape[0]:] = ds.axes[2][-1]+ds.axes[0]
+        rs.axes[0] = ds.axes[1]
+
+    rs.title = ds.title
+
+    print 'summed frames with stth:', frame_count
+    rs.copy_cif_metadata(ds)
+    rs.set_axes([ds.axes[1],new_axis],anames=["Vertical offset","Two theta"],aunits=["mm","Degrees"])
+
+    return rs
 
 def read_efficiency_cif(filename):
     """Return a dataset,variance stored in a CIF file as efficiency values"""
@@ -501,6 +546,19 @@ def convert_to_twotheta(ds):
 
 #======== Following code based on Echidna code ============#
 
+def get_wire_step(ds):
+     # Determine horizontal pixels per vertical wire interval
+    wire_pos = ds.axes[-1]
+    wire_sep = abs(wire_pos[0]-wire_pos[-1])/(len(wire_pos)-1)
+    #print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
+    det_steps = ds.axes[0]
+    bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
+    print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
+    pixel_step = int(round(wire_sep/bin_size))
+    bin_size = wire_sep/pixel_step
+    print '%f wire separation, %d steps before overlap, ideal binsize %f' % (wire_sep,pixel_step,bin_size)
+    return det_steps,pixel_step,bin_size
+
 #
 # Calculate adjusted gain based on matching intensities between overlapping
 # sections of data from different detectors
@@ -529,16 +587,7 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
     if bottom is None: bottom = 0
     # Dimensions are step,vertical,horizontal
     b = ds[:,bottom:top,:].intg(axis=1).get_reduced()
-    # Determine horizontal pixels per vertical wire interval
-    wire_pos = ds.axes[-1]
-    wire_sep = abs(wire_pos[0]-wire_pos[-1])/(len(wire_pos)-1)
-    #print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
-    det_steps = ds.axes[0]
-    bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
-    print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
-    pixel_step = int(round(wire_sep/bin_size))
-    bin_size = wire_sep/pixel_step
-    print '%f wire separation, %d steps before overlap, ideal binsize %f' % (wire_sep,pixel_step,bin_size)
+    det_steps,pixel_step,bin_size = get_wire_step(ds)
     dropped_frames = parse_ignore_spec(drop_frames)
     dropped_cols = parse_ignore_spec(drop_wires)
     # Drop frames from the end as far as we can

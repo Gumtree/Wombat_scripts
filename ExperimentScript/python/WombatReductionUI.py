@@ -588,6 +588,7 @@ def __run_script__(fns):
                     fg = Dataset(gain)
                     fg.var = esds**2
                     # set horizontal axis (ideal values)
+                    Plot1.set_dataset(reduction.getStepSummed(cs))
                     Plot4.set_dataset(Dataset(chisquared))   #chisquared history
                     Plot5.set_dataset(fg)   #final gain plot
                     # now save the file if requested
@@ -616,9 +617,9 @@ def __run_script__(fns):
             if target_val != "":
                 gs.title = gs.title + "_" + str(target_val)
             try:
-                send_to_plot(gs,Plot2,add=True,change_title=False)
-            except IndexError:  #catch error from GPlot
-                send_to_plot(gs,Plot2,add=False,change_title=True)
+                send_to_plot(gs,Plot2,add=True,title="Integrated data",quantity="Counts")
+            except IndexError:  #catch error from GPlot ??
+                send_to_plot(gs,Plot2,add=False,title="Integrated data",quantity="Counts")
             # Output datasets
             try:
                 val_for_output = int(target_val)
@@ -640,7 +641,7 @@ def __run_script__(fns):
             frameno += 1
             
 ''' Utility functions for plots '''
-def send_to_plot(dataset,plot,add=False,change_title=True,add_timestamp=True):
+def send_to_plot(dataset,plot,add=False,title="",add_timestamp=True,quantity=""):
     """This routine appends a timestamp to the dataset title
     in order to keep uniqueness of the title for later 
     identification purposes. It also maintains plot
@@ -660,13 +661,12 @@ def send_to_plot(dataset,plot,add=False,change_title=True,add_timestamp=True):
         plot.add_dataset(dataset)
     else:
         plot.set_dataset(dataset)
-    if change_title:
-        plot.title = dataset.title
+    if title:
+        plot.title = title
+    #Vertical axis
+    plot.set_y_label(quantity)
     #Update any widgets that keep a track of the plots
-    if plot == Plot3:   #Delete only operates on plot 3
-        curves = ['All'] + map(lambda a:a.title,plot.ds)
-        plh_dataset.options = curves
-        plh_dataset.value = 'All'
+    plh_plot_changed()
 
 # dispose
 def __dispose__():
