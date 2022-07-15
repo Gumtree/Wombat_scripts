@@ -20,7 +20,7 @@ output_fxye = Par('bool','False')
 output_fxye.title = 'GSAS FXYE'
 output_topas = Par('bool','False')
 output_topas.title = 'Topas'
-output_stem = Par('string','reduced_')
+output_stem = Par('string','reduced')
 output_stem.title = 'Append to filename'
 grouping_options = {"Frame":"run_number","TC1 setpoint":"/sample/tc1/sensor/setpoint1","None":None}
 output_grouping = Par('string','None',options=grouping_options.keys())
@@ -515,6 +515,7 @@ def __run_script__(fns):
              except TypeError:
                  avetemp = temperature
              stem_template = stem_template.replace('%vf',"%.0fC" % avetemp)
+        if stem_template != "": stem_template = "_"+stem_template
         print 'Filename stem is now ' + stem_template
         # restrict output set of frames
         restrict_spec = str(output_restrict.value)
@@ -627,7 +628,8 @@ def __run_script__(fns):
             except:
                 val_for_output = str(target_val)
                 format_for_output = "%s"
-            filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+stem_template+"_"+(format_for_output % val_for_output))
+            if target_val != "": format_for_output = "_" + format_for_output
+            filename_base = join(str(out_folder.value),basename(str(fn))[:-7] + stem_template +(format_for_output % val_for_output))
             if output_cif.value:
                 output.write_cif_data(gs,filename_base)
             if output_xyd.value:
