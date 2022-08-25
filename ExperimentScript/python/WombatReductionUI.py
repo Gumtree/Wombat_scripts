@@ -356,7 +356,102 @@ def save_user_prefs(prefix=''):
             print 'Set %s to %s' % (prefix+name,get_prof_value(prefix+name))
             prof_names.append(name)
             prof_vals.append(str(prof_val))
-    return prof_names,prof_vals        
+    return prof_names,prof_vals
+
+""" Helper routines for run_script actions """
+
+def process_normalise_options():
+    
+    normalise_output = False
+    if norm_apply.value:
+        
+        # norm_ref is the source of information for normalisation
+        # norm_tar is the value norm_ref should become,
+        # by multiplication.  If 'auto', the maximum value of norm_ref
+        # for the first dataset is used, otherwise any number may be entered.
+        
+        if len(str(norm_target.value))==0:
+            norm_tar = -1
+        else: 
+            norm_tar = int(str(norm_target.value))
+            
+        # check if normalization reference is provided
+
+        norm_ref = str(norm_reference.value)
+        if len(norm_ref) == 0:
+            norm_ref = None
+            norm_tar = -1
+            print 'WARNING: no reference for normalization was specified'
+        else:
+            location = norm_table[norm_ref]     
+            print 'utilized reference value for "' + norm_ref + '" is:', norm_tar
+            
+        # use provided reference value
+        
+        if norm_tar != -1:
+            norm_tar = float(norm_tar)
+            normalise_output = True
+            
+    else:
+        norm_ref = None
+        norm_tar = None
+
+    return norm_tar, norm_ref, normalise_output, location
+
+def process_bkg_options():
+    if bkg_apply.value:
+        if not bkg_map.value:
+            bkg = None
+            print 'WARNING: no bkg-map was specified'
+        else:
+            try:
+                bkg = Dataset(str(bkg_map.value))
+            except:
+                raise ValueError, "Background file %s not found" % str(bkg_map.value)
+            
+            # to avoid complaints in routines that expect it
+            reduction.AddCifMetadata.add_metadata_methods(bkg)
+    else:
+        bkg = None
+
+    return bkg
+
+def process_eff_options():
+    if eff_apply.value:
+        if not eff_map.value:
+            eff = None
+            print 'WARNING: no eff-map was specified'
+        else:
+            try:
+                eff = Dataset(str(eff_map.value))
+            except:
+                raise ValueError, "Efficiency file %s not found" % str(eff_map.value)
+    else:
+        eff = None
+
+    return eff
+
+def process_rescale_options():
+
+    if vig_apply_rescale.value:
+        vig_normalisation = float(vig_rescale_target.value)
+    else:
+        vig_normalisation = -1
+    group_val = grouping_options[str(output_grouping.value)]
+
+    return vig_normalisation
+
+def process_regain_options():
+    regain_data = []
+    pre_ignore = 0
+    if regain_load.value:
+        if not regain_load_filename.value:
+            raise ValueError, "You have requested loading of gain correction from a file but no file has been specified"
+        rlf = str(regain_load_filename.value)
+        regain_data, pre_ignore = reduction.load_regain_values(rlf)
+        print "Loaded gain data from %s, first/last %d wires ignored" % (rlf,pre_ignore)
+
+    return regain_data, pre_ignore
 
 ''' Script Actions '''
 
@@ -372,86 +467,39 @@ def __run_script__(fns):
     df.datasets.clear()
     
     # save user preferences
+
     prof_names,prof_values = save_user_prefs()
 
     elapsed = time.clock()
+
     # check input
+    
     if (fns is None or len(fns) == 0) :
         print 'no input datasets'
         return
 
     # set the title for Plot2
     # Plot2.title = 'Plot 2'
-    # check if input needs to be normalized
-    normalise_output = False
-    if norm_apply.value:
-        # norm_ref is the source of information for normalisation
-        # norm_tar is the value norm_ref should become,
-        # by multiplication.  If 'auto', the maximum value of norm_ref
-        # for the first dataset is used, otherwise any number may be entered.
-        if len(str(norm_target.value))==0:
-            norm_tar = -1
-        else: 
-            norm_tar = int(str(norm_target.value))
-        # check if normalization reference is provided
-        norm_ref = str(norm_reference.value)
-        if len(norm_ref) == 0:
-            norm_ref = None
-            norm_tar = -1
-            print 'WARNING: no reference for normalization was specified'
-        else:
-            location = norm_table[norm_ref]     
-            print 'utilized reference value for "' + norm_ref + '" is:', norm_tar
-            
-        # use provided reference value
-        if norm_tar != -1:
-            norm_tar = float(norm_tar)
-            normalise_output = True
-            
-    else:
-        norm_ref = None
-        norm_tar = None
-    
-    # check if bkg-map needs to be loaded
-    if bkg_apply.value:
-        if not bkg_map.value:
-            bkg = None
-            print 'WARNING: no bkg-map was specified'
-        else:
-            bkg = Dataset(str(bkg_map.value))
-            # to avoid complaints in routines that expect it
-            reduction.AddCifMetadata.add_metadata_methods(bkg)
-    else:
-        bkg = None
-    
-    # check if eff-map needs to be loaded
-    if eff_apply.value:
-        if not eff_map.value:
-            eff = None
-            print 'WARNING: no eff-map was specified'
-        else:
-            eff = Dataset(str(eff_map.value))
-    else:
-        eff = None
-    # Check for rescale
-    if vig_apply_rescale.value:
-        vig_normalisation = float(vig_rescale_target.value)
-    else:
-        vig_normalisation = -1
+
+    norm_tar, norm_ref, normalise_output, location = process_normalise_options()
+    vig_normalisation = process_rescale_options()
     group_val = grouping_options[str(output_grouping.value)]
-    # check if gain correction needs to be loaded
-    regain_data = []
-    pre_ignore = 0
-    if regain_load.value:
-        if not regain_load_filename.value:
-            open_error("You have requested loading of gain correction from a file but no file has been specified")
-            return
-        rlf = str(regain_load_filename.value)
-        regain_data,pre_ignore = reduction.load_regain_values(rlf)
-        print "Loaded gain data from %s, first/last %d wires ignored" % (rlf,pre_ignore)
+
+    # The error dialog only works at this level it seems, so anything that
+    # could raise an error we group together here
+    
+    try:
+        bkg = process_bkg_options()
+        eff = process_eff_options()
+        regain_data, pre_ignore = process_regain_options()
+    except ValueError as e:
+        open_error(str(e))
+        return
+    
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
     # the first dataset unless it has already been specified.
+    
     for fn in fns:
         # load dataset
         ds = df[fn]
