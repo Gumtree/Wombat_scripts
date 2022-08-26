@@ -212,11 +212,6 @@ def getStepSummed(ds):
     if ds.axes[2].title != 'x_pixel_angular_offset':
         raise AttributeError('ds.axes[2].title != x_pixel_angular_offset')
 
-    # calculate step size as a proportion of x pixel step
-    
-    _, pixel_step, bin_size = get_wire_step(ds)
-    print "Pixel_step %d, bin size %f" % (pixel_step, bin_size)
-
     # sum first dimension of storage and variance
 
     frame_count = ds.shape[0]
@@ -225,16 +220,28 @@ def getStepSummed(ds):
 
     if frame_count == 1:
         rs = ds.get_reduced()
+        ok_map = ones(rs.shape)
+        ok_map[rs<=0]=0
+        new_axis = ds.axes[2] + ds.axes[0][0]
     else:
+            # calculate step size as a proportion of x pixel step
+    
+        _, pixel_step, bin_size = get_wire_step(ds)
+        print "Pixel_step %d, bin size %f" % (pixel_step, bin_size)
+
         extra_width = pixel_step * (frame_count-1)
         new_shape = ds.shape[1],ds.shape[2]+ extra_width
         base_data = zeros(new_shape)
         base_var = zeros(new_shape)
+        ok_map = zeros(new_shape)
         for frame in xrange(0, frame_count):
             start_index = frame*pixel_step
             finish_index = ds.shape[2]+frame*pixel_step
             base_data[:,start_index:finish_index]  += ds.storage[frame]
             base_var[:,start_index:finish_index]   += ds.var[frame]
+            mask = ones(ds[frame].shape)
+            mask[ds.storage[frame]<=0]=0
+            ok_map[:,start_index:finish_index] += mask
 
         # finalize result
         rs = Dataset(base_data)
@@ -250,7 +257,7 @@ def getStepSummed(ds):
     rs.copy_cif_metadata(ds)
     rs.set_axes([ds.axes[1],new_axis],anames=["Vertical offset","Two theta"],aunits=["mm","Degrees"])
 
-    return rs
+    return rs, ok_map
 
 def read_efficiency_cif(filename):
     """Return a dataset,variance stored in a CIF file as efficiency values"""

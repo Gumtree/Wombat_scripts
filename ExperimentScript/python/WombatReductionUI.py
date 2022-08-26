@@ -542,7 +542,7 @@ def process_regain(cs, all_stth, regain_data, pre_ignore):
         fg = Dataset(gain)
         fg.var = esds**2
         # set horizontal axis (ideal values)
-        Plot1.set_dataset(reduction.getStepSummed(cs))
+        Plot1.set_dataset(reduction.getStepSummed(cs)[0])
         Plot4.set_dataset(Dataset(chisquared))   #chisquared history
         Plot5.set_dataset(fg)   #final gain plot
         # now save the file if requested
@@ -563,13 +563,13 @@ def process_vertical_sum(cs, stth_values, vig_normalisation):
                 aunits=["Degrees","mm","Degrees"])
 
     print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
-    # es = cs.intg(axis=0)
-    es = reduction.getStepSummed(cs)  # does axis correction as well
+    print 'stth values' + `stth_values`
+    es, okmap = reduction.getStepSummed(cs)  # does axis correction as well
     es.copy_cif_metadata(cs)
     print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
     Plot1.set_dataset(es)
     
-    gs = reduction.getVerticalIntegrated(es, axis=0, normalization=vig_normalisation,
+    gs = reduction.getVerticalIntegrated(es, okmap=okmap, axis=0, normalization=vig_normalisation,
                                          bottom = int(vig_lower_boundary.value),
                                          top=int(vig_upper_boundary.value))
     return gs
@@ -672,15 +672,16 @@ def __run_script__(fns):
         # we accumulate the equivalent total monitor 
         # counts for requested normalisation later  
 
-        stth_values = []
         while frame_no <= start_frames:
             if regain_apply.value or group_val is None:   #take them all
                 frame_no = start_frames
                 target_val = ""
-                stth_values = all_stth
             else:         # use value to work out range
-                stth_values.append(all_stth[current_frame_start])  #CHECKCHECKCHECK
-                target_val = ds[group_val][current_frame_start]
+                try:
+                    target_val = ds[group_val][current_frame_start]
+                except:
+                    open_error("Unable to read value of %s for %s" % (group_val,fn))
+                    return
                 try:
                     if df[fn][group_val][frame_no] == target_val:
                         frame_no += 1
@@ -693,6 +694,7 @@ def __run_script__(fns):
             
             cs = ds.get_section([current_frame_start,0,0],[frame_no-current_frame_start,ds.shape[1],ds.shape[2]])
             cs.copy_cif_metadata(ds)
+            stth_values = all_stth[current_frame_start:frame_no]
 
             # Extract temperature if requested
 
