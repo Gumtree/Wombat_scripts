@@ -202,7 +202,7 @@ def getSummed(ds, applyStth=0.0):
 
 def getStepSummed(ds):
     """ As for `getSummed`, but additionally offsets each frame to model 2th
-    movement between frames. `stth` is the 2th offset of the first frame. """
+    movement between frames. """
     import time
     print 'step summation of', ds.title
 
@@ -213,10 +213,16 @@ def getStepSummed(ds):
         raise AttributeError('ds.axes[2].title != x_pixel_angular_offset')
 
     # calculate step size as a proportion of x pixel step
-    wire_sep,pixel_step,bin_size = get_wire_step(ds)
+    
+    _, pixel_step, bin_size = get_wire_step(ds)
+    print "Pixel_step %d, bin size %f" % (pixel_step, bin_size)
+
     # sum first dimension of storage and variance
+
     frame_count = ds.shape[0]
+
     # detect single frames
+
     if frame_count == 1:
         rs = ds.get_reduced()
     else:
@@ -550,7 +556,7 @@ def get_wire_step(ds):
      # Determine horizontal pixels per vertical wire interval
     wire_pos = ds.axes[-1]
     wire_sep = abs(wire_pos[0]-wire_pos[-1])/(len(wire_pos)-1)
-    #print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
+    print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
     det_steps = ds.axes[0]
     bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
     print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])

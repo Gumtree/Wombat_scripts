@@ -460,7 +460,16 @@ def get_detector_positions(ds):
 
     print "all_stth is %s" % repr(all_stth) 
 
-    return stth_value, all_stth
+    return all_stth
+
+def there_are_no_steps(all_stth,tol=0.01):
+    def mymax(a,b):
+        if a > b: return a
+        else: return b
+        
+    average = sum(all_stth)/len(all_stth)
+    max_diff = reduce(mymax, all_stth - average, 0)
+    return max_diff < tol
 
 def get_frame_range(ds):
     restrict_spec = str(output_restrict.value)
@@ -545,11 +554,17 @@ def process_regain(cs, all_stth, regain_data, pre_ignore):
         raise ValueError, "Cannot do gain recalculation as the scan ranges do not overlap."
     return gs
 
-def process_vertical_sum(cs, all_stth, stth_value, vig_normalisation):
+def process_vertical_sum(cs, stth_values, vig_normalisation):
     from Reduction import reduction
+    # fix the axes
+    cs.set_axes([stth_values,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
+                                                         "Vertical Pixel",
+                                                         "Two theta"],
+                aunits=["Degrees","mm","Degrees"])
+
     print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
     # es = cs.intg(axis=0)
-    es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
+    es = reduction.getStepSummed(cs)  # does axis correction as well
     es.copy_cif_metadata(cs)
     print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
     Plot1.set_dataset(es)
@@ -615,7 +630,7 @@ def __run_script__(fns):
 
         # Get detector positions
 
-        stth_value, all_stth = get_detector_positions(ds)
+        all_stth = get_detector_positions(ds)
 
         # Prepare dataset
         
@@ -657,12 +672,14 @@ def __run_script__(fns):
         # we accumulate the equivalent total monitor 
         # counts for requested normalisation later  
 
+        stth_values = []
         while frame_no <= start_frames:
             if regain_apply.value or group_val is None:   #take them all
                 frame_no = start_frames
                 target_val = ""
+                stth_values = all_stth
             else:         # use value to work out range
-                stth_value = all_stth[current_frame_start]  #CHECKCHECKCHECK
+                stth_values.append(all_stth[current_frame_start])  #CHECKCHECKCHECK
                 target_val = ds[group_val][current_frame_start]
                 try:
                     if df[fn][group_val][frame_no] == target_val:
@@ -691,15 +708,16 @@ def __run_script__(fns):
                     open_error(str(e))
                     return
                 
-            else:  #just sum already, regain does this as part of the job
+            else:  #just sum already
 
-                print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_value)
+                print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_values[0])
+                
                 if target_val != "":
                     print 'Corresponding to a target value of ' + `target_val`
                     
                 # sum the input frames
 
-                gs = process_vertical_sum(cs, all_stth, stth_value, vig_normalisation)
+                gs = process_vertical_sum(cs, stth_values, vig_normalisation)
                 
             if target_val != "":
                 gs.title = gs.title + "_" + str(target_val)
