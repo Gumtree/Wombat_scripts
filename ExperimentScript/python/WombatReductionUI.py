@@ -22,7 +22,7 @@ output_topas = Par('bool','False')
 output_topas.title = 'Topas'
 output_stem = Par('string','reduced')
 output_stem.title = 'Append to filename'
-grouping_options = {"Frame":"run_number","TC1 setpoint":"/sample/tc1/sensor/setpoint1","None":None}
+grouping_options = {"Frame":"run_number","TC1 setpoint":"/entry1/sample/tc1/sensor/setpoint1","None":None}
 output_grouping = Par('string','None',options=grouping_options.keys())
 output_grouping.title = 'Split frames'
 output_restrict = Par('string','All')
@@ -362,7 +362,6 @@ def save_user_prefs(prefix=''):
 
 def process_normalise_options():
     
-    normalise_output = False
     if norm_apply.value:
         
         # norm_ref is the source of information for normalisation
@@ -382,21 +381,19 @@ def process_normalise_options():
             norm_ref = None
             norm_tar = -1
             print 'WARNING: no reference for normalization was specified'
-        else:
-            location = norm_table[norm_ref]     
+        else:     
             print 'utilized reference value for "' + norm_ref + '" is:', norm_tar
             
         # use provided reference value
         
         if norm_tar != -1:
             norm_tar = float(norm_tar)
-            normalise_output = True
             
     else:
         norm_ref = None
         norm_tar = None
 
-    return norm_tar, norm_ref, normalise_output, location
+    return norm_tar, norm_ref
 
 def process_bkg_options():
     if bkg_apply.value:
@@ -437,7 +434,6 @@ def process_rescale_options():
         vig_normalisation = float(vig_rescale_target.value)
     else:
         vig_normalisation = -1
-    group_val = grouping_options[str(output_grouping.value)]
 
     return vig_normalisation
 
@@ -453,6 +449,116 @@ def process_regain_options():
 
     return regain_data, pre_ignore
 
+def get_detector_positions(ds):
+    
+    try:
+        stth_value = sum(ds.stth)/len(ds.stth) # save for later
+        all_stth = ds.stth[:] # also save for later
+    except TypeError:
+        stth_value = ds.stth
+        all_stth= [stth_value]
+
+    print "all_stth is %s" % repr(all_stth) 
+
+    return stth_value, all_stth
+
+def get_frame_range(ds):
+    restrict_spec = str(output_restrict.value)
+    if ':' in restrict_spec:
+        first,last = map(int,restrict_spec.split(':'))
+        start_frames = last
+        current_frame_start = first
+        frame_no = first
+    else:
+        start_frames = len(ds)
+        current_frame_start = 0
+        frame_no = 0
+    return frame_no, start_frames, current_frame_start
+
+def create_stem_template(ds, df, fn, frame_no):
+    """Calculate the filename string by looking for special wildcards.
+    %s = samplename, %t1,%t2, %vf for cryo and vacuum furnace temperatures.
+    If frame_no is >= 0, a particular step will be chosen
+    """
+    import re
+    temp_table = {"%t1":("/entry1/sample/tc1/sensor/sensorValueA","%.1fK"),
+                  "%t2":("/entry1/sample/tc1/sensor/sensorValueB","%.1fK"),
+                  "%vf":("/entry1/sample/tc1/sensor","%.0fK")
+                  }
+    stem_template = str(output_stem.value)
+    stem_template = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem_template)
+    
+    if '%s' in stem_template:
+        samplename = ds.harvest_metadata("CIF")['_pd_spec_special_details']
+        name_front = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',samplename)
+        stem_template = stem_template.replace('%s',name_front)
+
+    for wildcard in temp_table.keys():
+        if wildcard in stem_template:
+            loc, fmt = temp_table[wildcard]
+
+            try:
+                temperature = df[fn][loc]
+            except AttributeError:
+                print "Unable to determine temperature for %s" % wildcard[1:]
+                continue
+            else:
+                print `temperature`
+                if frame_no >= 0 and hasattr(temperature,"__len__") and len(temperature) > 0:
+                    temperature = temperature[frame_no]
+                elif hasattr(temperature,"__len__"):
+                    temperature = sum(temperature)/len(temperature)
+            stem_template = stem_template.replace(wildcard, fmt % temperature)
+ 
+    if stem_template != "": stem_template = "_"+stem_template
+    print 'Filename stem is now ' + stem_template
+    return stem_template
+
+def process_regain(cs, all_stth, regain_data, pre_ignore):
+    from Reduction import reduction
+    # fix the axes
+    cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
+                                                         "Vertical Pixel",
+                                                         "Two theta"],
+                aunits=["Degrees","mm","Degrees"])
+    bottom = int(vig_lower_boundary.value)
+    top = int(vig_upper_boundary.value)
+    dumpfile = None
+    #if regain_dump_tubes.value:
+    #    dumpfile = filename_base+".tubes"
+    gs,gain,esds,chisquared,no_overlaps,ignored = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
+                                                                       drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
+                                                                       do_sum=regain_sum.value, fix_ignore=pre_ignore)
+    if gs is not None:
+        fg = Dataset(gain)
+        fg.var = esds**2
+        # set horizontal axis (ideal values)
+        Plot1.set_dataset(reduction.getStepSummed(cs))
+        Plot4.set_dataset(Dataset(chisquared))   #chisquared history
+        Plot5.set_dataset(fg)   #final gain plot
+        # now save the file if requested
+        if regain_store.value and not regain_load.value:
+            gain_comment = "Gains refined from file %s" % fn
+            reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
+                                          ignored=ignored)
+    else:
+        raise ValueError, "Cannot do gain recalculation as the scan ranges do not overlap."
+    return gs
+
+def process_vertical_sum(cs, all_stth, stth_value, vig_normalisation):
+    from Reduction import reduction
+    print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
+    # es = cs.intg(axis=0)
+    es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
+    es.copy_cif_metadata(cs)
+    print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
+    Plot1.set_dataset(es)
+    
+    gs = reduction.getVerticalIntegrated(es, axis=0, normalization=vig_normalisation,
+                                         bottom = int(vig_lower_boundary.value),
+                                         top=int(vig_upper_boundary.value))
+    return gs
+
 ''' Script Actions '''
 
 # This function is called when pushing the Run button in the control UI.
@@ -462,7 +568,6 @@ def __run_script__(fns):
     from os.path import basename
     from os.path import join
     from Formats import output
-    import re
     
     df.datasets.clear()
     
@@ -478,10 +583,7 @@ def __run_script__(fns):
         print 'no input datasets'
         return
 
-    # set the title for Plot2
-    # Plot2.title = 'Plot 2'
-
-    norm_tar, norm_ref, normalise_output, location = process_normalise_options()
+    norm_tar, norm_ref = process_normalise_options()
     vig_normalisation = process_rescale_options()
     group_val = grouping_options[str(output_grouping.value)]
 
@@ -501,169 +603,104 @@ def __run_script__(fns):
     # the first dataset unless it has already been specified.
     
     for fn in fns:
+        
         # load dataset
+
         ds = df[fn]
-        # extract basic metadata
+
+        # extract and store basic metadata
+
         ds = reduction.AddCifMetadata.extract_metadata(ds)
         reduction.AddCifMetadata.store_reduction_preferences(ds,prof_names,prof_values)
-        try:
-             stth_value = sum(ds.stth)/len(ds.stth) # save for later
-             all_stth = ds.stth[:] # also save for later
-        except TypeError:
-            stth_value = ds.stth
-            all_stth= [stth_value]
+
+        # Get detector positions
+
+        stth_value, all_stth = get_detector_positions(ds)
+
+        # Prepare dataset
+        
         if ds.ndim > 3:
             rs = ds.get_reduced()
         else:
             rs = ds
-        print "all_stth is %s" % repr(all_stth) 
+
         rs = rs * 1.0  #convert to float
         rs.copy_cif_metadata(ds)
-        # check if normalized is required 
+        
+        # Do normalisation
+
         if norm_ref:
             norm_tar = reduction.applyNormalization(rs, reference=norm_table[norm_ref], target=norm_tar)
+
+        # Remove background
+        
         if bkg:
             rs = reduction.getBackgroundCorrected(rs, bkg, norm_table[norm_ref], norm_tar)
         # check if efficiency correction is required
+        
         assert rs.dtype == Array([1.2,1.3]).dtype
+
         if eff:
             ds = reduction.getEfficiencyCorrected(rs, eff)
         else:
             ds = rs
-        # Calculate inserted string: %s for sample name, %t for temperature
-        stem_template = str(output_stem.value)
-        stem_template = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem_template)
-        if '%s' in stem_template:
-             samplename = ds.harvest_metadata("CIF")['_pd_spec_special_details']
-             name_front = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',samplename)
-             stem_template = stem_template.replace('%s',name_front)
-        if '%t1' in stem_template and group_val is None:
-             # get tc1
-             temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"]
-             print `temperature`
-             try:
-                 avetemp = sum(temperature)/len(temperature)
-             except TypeError:
-                 avetemp = temperature
-             stem_template = stem_template.replace('%t1',"%.0fK" % avetemp)
-        if '%t2' in stem_template and group_val is None:
-             # get tc1
-             temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueB"]
-             print `temperature`
-             try:
-                 avetemp = sum(temperature)/len(temperature)
-             except TypeError:
-                 avetemp = temperature
-             stem_template = stem_template.replace('%t2',"%.1fK" % avetemp)
-        if '%vf' in stem_template and group_val is None:
-             # get tc1
-             temperature = df[fn]["/entry1/sample/tc1/sensor"]
-             print `temperature`
-             try:
-                 avetemp = sum(temperature)/len(temperature)
-             except TypeError:
-                 avetemp = temperature
-             stem_template = stem_template.replace('%vf',"%.0fC" % avetemp)
-        if stem_template != "": stem_template = "_"+stem_template
-        print 'Filename stem is now ' + stem_template
+
+        # Calculate filename string
+
+        stem_template = create_stem_template(ds, df, fn, -1)
+        
         # restrict output set of frames
-        restrict_spec = str(output_restrict.value)
-        if ':' in restrict_spec:
-            first,last = map(int,restrict_spec.split(':'))
-            start_frames = last
-            current_frame_start = first
-            frameno = first
-        else:
-            start_frames = len(ds)
-            current_frame_start = 0
-            frameno = 0
+
+        frame_no, start_frames, current_frame_start = get_frame_range(ds)
+            
         # perform grouping of sequential input frames 
         # we accumulate the equivalent total monitor 
         # counts for requested normalisation later  
-        while frameno <= start_frames:
-            if regain_apply.value:   #take them all
-                frameno = start_frames
+
+        while frame_no <= start_frames:
+            if regain_apply.value or group_val is None:   #take them all
+                frame_no = start_frames
                 target_val = ""
-            elif group_val is None:
-                target_val = ""
-                final_frame = start_frames-1
-                frameno = start_frames
-            else:
-                stth_value = all_stth[current_frame_start]
+            else:         # use value to work out range
+                stth_value = all_stth[current_frame_start]  #CHECKCHECKCHECK
                 target_val = ds[group_val][current_frame_start]
                 try:
-                    if df[fn][group_val][frameno] == target_val:
-                        frameno += 1
+                    if df[fn][group_val][frame_no] == target_val:
+                        frame_no += 1
                         continue
                 except:   #Assume an exception is due to too large frameno
                     print 'Exiting frame loop due to error'
-            # frameno is the first frame with the wrong values
-            cs = ds.get_section([current_frame_start,0,0],[frameno-current_frame_start,ds.shape[1],ds.shape[2]])
+                    # frame_no is the first frame with the wrong values
+
+            # Extract the section from current_frame_start to frame_no
+            
+            cs = ds.get_section([current_frame_start,0,0],[frame_no-current_frame_start,ds.shape[1],ds.shape[2]])
             cs.copy_cif_metadata(ds)
-            # Store temperature if requested
-            if "%t1" in stem_template:
-                try:
-                    temperature = df[fn]["/entry1/sample/tc1/sensor/sensorValueA"][current_frame_start]
-                except AttributeError:
-                    print 'Unable to determine temperature at step %d' % current_frame_start
-                else:
-                    stem_template = stem_template.replace('%t1',"%.0fK" % temperature)
-                    print 'Filename is now ' + stem_template    
-            elif "%vf" in stem_template:
-                try:
-                    temperature = df[fn]["/entry1/sample/tc1/sensor"][current_frame_start]
-                except (AttributeError,TypeError):
-                    print 'Unable to determine temperature at step %d' % current_frame_start
-                else:
-                    stem_template = stem_template.replace('%vf',"%.0fC" % temperature)
-                    print 'Filename is now ' + stem_template    
+
+            # Extract temperature if requested
+
+            stem_template = create_stem_template(ds, df, fn, current_frame_start)
 
             # check if we are recalculating gain 
+
             if regain_apply.value:
-                # fix the axes
-                cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
-                                                                    "Vertical Pixel",
-                                                                    "Two theta"],
-                            aunits=["Degrees","mm","Degrees"])
-                bottom = int(vig_lower_boundary.value)
-                top = int(vig_upper_boundary.value)
-                dumpfile = None
-                #if regain_dump_tubes.value:
-                #    dumpfile = filename_base+".tubes"
-                gs,gain,esds,chisquared,no_overlaps,ignored = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
-                                                                          drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
-                                                                                   do_sum=regain_sum.value, fix_ignore=pre_ignore)
-                if gs is not None:
+                try:
+                    gs = process_regain(cs, all_stth, regain_data, pre_ignore)
                     print 'Have new gains at %f' % (time.clock() - elapsed)
-                    fg = Dataset(gain)
-                    fg.var = esds**2
-                    # set horizontal axis (ideal values)
-                    Plot1.set_dataset(reduction.getStepSummed(cs))
-                    Plot4.set_dataset(Dataset(chisquared))   #chisquared history
-                    Plot5.set_dataset(fg)   #final gain plot
-                    # now save the file if requested
-                    if regain_store.value and not regain_load.value:
-                        gain_comment = "Gains refined from file %s" % fn
-                        reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
-                                                      ignored=ignored)
-                else:
-                    open_error("Cannot do gain recalculation as the scan ranges do not overlap.")
+                except ValueError as e:
+                    open_error(str(e))
                     return
-            if not regain_apply.value:  #already done
-                print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frameno-1,cs.shape,stth_value)
+                
+            else:  #just sum already, regain does this as part of the job
+
+                print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_value)
                 if target_val != "":
                     print 'Corresponding to a target value of ' + `target_val`
-                    # sum the input frames
-                print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
-                # es = cs.intg(axis=0)
-                es = reduction.getSummed(cs,applyStth=stth_value)  # does axis correction as well
-                es.copy_cif_metadata(cs)
-                print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
-                Plot1.set_dataset(es)
+                    
+                # sum the input frames
 
-                gs = reduction.getVerticalIntegrated(es, axis=0, normalization=vig_normalisation,
-                                                     bottom = int(vig_lower_boundary.value),
-                                                     top=int(vig_upper_boundary.value))
+                gs = process_vertical_sum(cs, all_stth, stth_value, vig_normalisation)
+                
             if target_val != "":
                 gs.title = gs.title + "_" + str(target_val)
             try:
@@ -688,8 +725,8 @@ def __run_script__(fns):
             if output_topas.value:
                 output.write_xyd_data(gs,filename_base,comment="'",extension="xye")
             #loop to next group of datasets
-            current_frame_start = frameno
-            frameno += 1
+            current_frame_start = frame_no
+            frame_no += 1
             
 ''' Utility functions for plots '''
 def send_to_plot(dataset,plot,add=False,title="",add_timestamp=True,quantity=""):
