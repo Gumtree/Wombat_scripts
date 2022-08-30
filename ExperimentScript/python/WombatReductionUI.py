@@ -1,6 +1,6 @@
 # Script control setup area
 __script__.title     = 'WOM Reduction'
-__script__.version   = '1.0'
+__script__.version   = '1.1'
 
 import sys
 # For direct access to the selected filenames
@@ -355,7 +355,7 @@ def save_user_prefs(prefix=''):
             set_prof_value(prefix+name,str(prof_val))
             print 'Set %s to %s' % (prefix+name,get_prof_value(prefix+name))
             prof_names.append(name)
-            prof_vals.append(prof_val)
+            prof_vals.append(str(prof_val))
     return prof_names,prof_vals        
 
 ''' Script Actions '''
@@ -457,6 +457,7 @@ def __run_script__(fns):
         ds = df[fn]
         # extract basic metadata
         ds = reduction.AddCifMetadata.extract_metadata(ds)
+        reduction.AddCifMetadata.store_reduction_preferences(ds,prof_names,prof_values)
         try:
              stth_value = sum(ds.stth)/len(ds.stth) # save for later
              all_stth = ds.stth[:] # also save for later
