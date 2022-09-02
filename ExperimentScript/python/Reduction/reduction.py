@@ -227,9 +227,15 @@ def getStepSummed(ds):
             # calculate step size as a proportion of x pixel step
     
         _, pixel_step, bin_size = get_wire_step(ds)
-        print "Pixel_step %d, bin size %f" % (pixel_step, bin_size)
 
-        extra_width = pixel_step * (frame_count-1)
+        if pixel_step < 0:     # step bigger than wire separation
+            pixel_step = -1 * pixel_step
+            extra_width = pixel_step * (frame_count - 1)
+            extra_points =  ds.axes[2][-1] + bin_size*arange(extra_width) + ds.axes[0][0]# step by wire separation
+        else:                  # step by stth step
+            extra_width = pixel_step * (frame_count - 1)
+            extra_points = ds.axes[2][-1]+ds.axes[0]
+        print "Pixel_step %d, bin size %f, extra %f" % (pixel_step, bin_size, extra_width)
         new_shape = ds.shape[1],ds.shape[2]+ extra_width
         base_data = zeros(new_shape)
         base_var = zeros(new_shape)
@@ -248,7 +254,8 @@ def getStepSummed(ds):
         rs.var = base_var
         new_axis = zeros(ds.axes[2].shape[0]+extra_width)
         new_axis[0:ds.axes[2].shape[0]] = ds.axes[2]+ds.axes[0][0]
-        new_axis[ds.axes[2].shape[0]:] = ds.axes[2][-1]+ds.axes[0]
+        new_axis[ds.axes[2].shape[0]:] = extra_points
+        print "Extra points " + repr(new_axis[ds.axes[2].shape[0]:])
         rs.axes[0] = ds.axes[1]
 
     rs.title = ds.title
@@ -561,14 +568,21 @@ def convert_to_twotheta(ds):
 
 def get_wire_step(ds):
      # Determine horizontal pixels per vertical wire interval
+    # If the step is larger than the wire separation, return
+    # -1 * wires per step and bin size is then wire separation
     wire_pos = ds.axes[-1]
     wire_sep = abs(wire_pos[0]-wire_pos[-1])/(len(wire_pos)-1)
     print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
     det_steps = ds.axes[0]
     bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
     print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
-    pixel_step = int(round(wire_sep/bin_size))
-    bin_size = wire_sep/pixel_step
+    pixel_step = wire_sep/bin_size
+    if pixel_step > 0.9:
+        pixel_step = int(round(pixel_step))
+        bin_size = wire_sep/pixel_step
+    else:   # detector step bigger than a single wire interval
+        pixel_step = int(round(-1/pixel_step))
+        bin_size = wire_sep
     print '%f wire separation, %d steps before overlap, ideal binsize %f' % (wire_sep,pixel_step,bin_size)
     return det_steps,pixel_step,bin_size
 
@@ -601,6 +615,8 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
     # Dimensions are step,vertical,horizontal
     b = ds[:,bottom:top,:].intg(axis=1).get_reduced()
     det_steps,pixel_step,bin_size = get_wire_step(ds)
+    if pixel_step <= 0:       #step is too large
+        raise ValueError, "Detector step is larger than wire spacing"
     dropped_frames = parse_ignore_spec(drop_frames)
     dropped_cols = parse_ignore_spec(drop_wires)
     # Drop frames from the end as far as we can
@@ -659,7 +675,7 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
         dump_wire_intensities(dumpfile,raw=b_zeroed)
     if len(use_gains)==0:   #we have to calculate them
         if c.shape[0] == 1:   #can't be done, there is no overlap
-            return None,None,None,None,None
+            raise ValueError, "No overlapping scans present"
         if do_sum:
             # sum the individual unoverlapped sections. Reshape is required as the
             # intg function removes the dimension
