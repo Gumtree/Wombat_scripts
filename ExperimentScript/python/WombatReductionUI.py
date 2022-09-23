@@ -492,7 +492,7 @@ def create_stem_template(ds, df, fn, frame_no):
     import re
     temp_table = {"%t1":("/entry1/sample/tc1/sensor/sensorValueA","%.1fK"),
                   "%t2":("/entry1/sample/tc1/sensor/sensorValueB","%.1fK"),
-                  "%vf":("/entry1/sample/tc1/sensor","%.0fK")
+                  "%vf":("/entry1/sample/tc1/sensor","%.0fC")
                   }
     stem_template = str(output_stem.value)
     stem_template = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem_template)
