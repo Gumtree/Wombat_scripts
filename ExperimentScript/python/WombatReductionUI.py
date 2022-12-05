@@ -525,7 +525,7 @@ def create_stem_template(ds, df, fn, frame_no):
     print 'Filename stem is now ' + stem_template
     return stem_template
 
-def process_regain(cs, all_stth, regain_data, pre_ignore):
+def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -742,7 +742,7 @@ def __run_script__(fns):
 
             if regain_apply.value:
                 try:
-                    gs = process_regain(cs, all_stth, regain_data, pre_ignore)
+                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn)
                     print 'Have new gains at %f' % (time.clock() - elapsed)
                 except ValueError as e:
                     open_error(str(e))
