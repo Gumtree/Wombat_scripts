@@ -492,7 +492,7 @@ def create_stem_template(ds, df, fn, frame_no):
     import re
     temp_table = {"%t1":("/entry1/sample/tc1/sensor/sensorValueA","%.1fK"),
                   "%t2":("/entry1/sample/tc1/sensor/sensorValueB","%.1fK"),
-                  "%vf":("/entry1/sample/tc1/sensor","%.0fK")
+                  "%vf":("/entry1/sample/tc1/sensor","%.0fC")
                   }
     stem_template = str(output_stem.value)
     stem_template = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem_template)
@@ -536,22 +536,20 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
     #if regain_dump_tubes.value:
     #    dumpfile = filename_base+".tubes"
     gs,gain,esds,chisquared,no_overlaps,ignored = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
-                                                                       drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
-                                                                       do_sum=regain_sum.value, fix_ignore=pre_ignore)
-    if gs is not None:
-        fg = Dataset(gain)
-        fg.var = esds**2
-        # set horizontal axis (ideal values)
-        Plot1.set_dataset(reduction.getStepSummed(cs)[0])
-        Plot4.set_dataset(Dataset(chisquared))   #chisquared history
-        Plot5.set_dataset(fg)   #final gain plot
-        # now save the file if requested
-        if regain_store.value and not regain_load.value:
-            gain_comment = "Gains refined from file %s" % fn
-            reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
-                                          ignored=ignored)
-    else:
-        raise ValueError, "Cannot do gain recalculation as the scan ranges do not overlap."
+                                                                           drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
+                                                                           do_sum=regain_sum.value, fix_ignore=pre_ignore)
+        
+    fg = Dataset(gain)
+    fg.var = esds**2
+    # set horizontal axis (ideal values)
+    Plot1.set_dataset(reduction.getStepSummed(cs)[0])
+    Plot4.set_dataset(Dataset(chisquared))   #chisquared history
+    Plot5.set_dataset(fg)   #final gain plot
+    # now save the file if requested
+    if regain_store.value and not regain_load.value:
+        gain_comment = "Gains refined from file %s" % fn
+        reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
+                                      ignored=ignored)
     return gs
 
 def process_vertical_sum(cs, stth_values, vig_normalisation):
