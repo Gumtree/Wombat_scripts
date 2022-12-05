@@ -135,6 +135,11 @@ def applyNormalization(ds, reference, target=-1):
         if target <= 0:
             target = reference.max()
         for i in xrange(ds.shape[0]):
+
+            # If we have zero counts, we engineer a no-op
+            
+            if reference[i] == 0:
+                reference[i] = float(target)
             f = float(target)/reference[i]
             v = f*target/(reference[i]*reference[i])
             # Funny syntax below to make sure we write into the original area,
