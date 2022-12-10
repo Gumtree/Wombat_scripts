@@ -241,7 +241,7 @@ def getStepSummed(ds):
             extra_width = pixel_step * (frame_count - 1)
             extra_points = ds.axes[2][-1]+ds.axes[0]
         print "Pixel_step %d, bin size %f, extra %f" % (pixel_step, bin_size, extra_width)
-        new_shape = ds.shape[1],ds.shape[2]+ extra_width
+        new_shape = ds.shape[1],ds.shape[2]+ int(extra_width)
         base_data = zeros(new_shape)
         base_var = zeros(new_shape)
         ok_map = zeros(new_shape)
@@ -257,7 +257,7 @@ def getStepSummed(ds):
         # finalize result
         rs = Dataset(base_data)
         rs.var = base_var
-        new_axis = zeros(ds.axes[2].shape[0]+extra_width)
+        new_axis = zeros(ds.axes[2].shape[0]+int(extra_width))
         new_axis[0:ds.axes[2].shape[0]] = ds.axes[2]+ds.axes[0][0]
         new_axis[ds.axes[2].shape[0]:] = extra_points
         print "Extra points " + repr(new_axis[ds.axes[2].shape[0]:])
@@ -581,6 +581,9 @@ def get_wire_step(ds):
     det_steps = ds.axes[0]
     bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
     print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
+    if abs(bin_size) < 0.0001:   #too small
+        print "Movement too small (%d) ignored" % bin_size
+        return det_steps, 0.0, 0.0
     pixel_step = wire_sep/bin_size
     if pixel_step > 0.9:
         pixel_step = int(round(pixel_step))
