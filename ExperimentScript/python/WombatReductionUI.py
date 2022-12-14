@@ -574,21 +574,25 @@ def process_vertical_sum(cs, stth_values, vig_normalisation):
                                          top=int(vig_upper_boundary.value))
     return gs
 
-def get_stack_dims(fns):
-    """Calculate the dimensions of stacked data"""
+def get_stack_dims(fns, split="None"):
+    """Calculate the dimensions of stacked data. If split is None, there is one row
+    per filename, otherwise the number of frames in each file is used."""
 
     shp = df[fns[0]].shape
 
     if len(fns) == 1:
         return [shp[0],shp[-1]]
-    
+
     for fn in fns[1:]:
         ds = df[fn]
         ddims = df[fn].shape
         if ddims[1] != shp[1] or ddims[2] != shp[2]:
             raise ValueError, "Shape mismatch when stacking multiple files: %s is %d %d but %s is %d %d" % (fns[1], shp[1], shp[2], fn, ddims[1], ddims[2])
 
-        shp[0] += ddims[0]
+        if split == "None":
+            shp[0] += 1
+        else:
+            shp[0] += ddims[0]
 
     print "Stacked data have dimension %s" % repr(shp)
     return [shp[0],shp[-1]]
@@ -623,15 +627,8 @@ def __run_script__(fns):
     # Initialise stacking information
     
     if output_stack.value:
-        if regain_apply.value:
-            open_error("Cannot do stack plot and recalculate gain: choose one or the other")
-            return
 
-        if output_grouping.value == "None":
-            open_error("'Split frames' must not be 'None' to create a stack plot")
-            return
-        
-        stack_ds = instance(get_stack_dims(fns))
+        stack_ds = instance(get_stack_dims(fns, split=str(output_grouping.value)))
         stack_counter = 0
 
     # Get processing parameters
