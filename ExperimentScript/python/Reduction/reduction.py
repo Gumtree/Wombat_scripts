@@ -194,6 +194,9 @@ def getSummed(ds, applyStth=0.0):
         rs.axes[1] = ds.axes[2]
         rs.axes[0] = ds.axes[1]
 
+    ok_map = ones(rs.shape)
+    ok_map[rs <= 0] = 0
+
     rs.title = ds.title
 
     if applyStth:  #we check for identity
@@ -203,7 +206,7 @@ def getSummed(ds, applyStth=0.0):
     print 'summed frames:', frame_count
     rs.copy_cif_metadata(ds)
     print 'Output dtype' + `rs.dtype`
-    return rs
+    return rs, ok_map
 
 def getStepSummed(ds):
     """ As for `getSummed`, but additionally offsets each frame to model 2th
@@ -233,6 +236,9 @@ def getStepSummed(ds):
     
         _, pixel_step, bin_size = get_wire_step(ds)
 
+        if bin_size == 0:  #no significant detector movement
+            return getSummed(ds)
+        
         if pixel_step < 0:     # step bigger than wire separation
             pixel_step = -1 * pixel_step
             extra_width = pixel_step * (frame_count - 1)
@@ -575,11 +581,15 @@ def get_wire_step(ds):
      # Determine horizontal pixels per vertical wire interval
     # If the step is larger than the wire separation, return
     # -1 * wires per step and bin size is then wire separation
+    # If there is no step, bin size is zero
     wire_pos = ds.axes[-1]
     wire_sep = abs(wire_pos[0]-wire_pos[-1])/(len(wire_pos)-1)
     print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
     det_steps = ds.axes[0]
     bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
+    if bin_size < wire_sep/100 or ds.axes[0] != "stth":
+        print "Detector not stepped!"
+        return wire_sep, 0, 0
     print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
     pixel_step = wire_sep/bin_size
     if pixel_step > 0.9:

@@ -25,10 +25,12 @@ output_stem.title = 'Append to filename'
 grouping_options = {"Frame":"run_number","TC1 setpoint":"/entry1/sample/tc1/sensor/setpoint1","None":None}
 output_grouping = Par('string','None',options=grouping_options.keys())
 output_grouping.title = 'Split frames'
+output_stack = Par('bool','True')
+output_stack.title = 'Stack plot'
 output_restrict = Par('string','All')
 output_restrict.title = 'These frames only (n:m)'
-Group('Output File').add(output_xyd,output_cif,output_fxye,output_topas,output_stem,out_folder,
-                           output_grouping,output_restrict)
+Group('Output File').add(output_xyd, output_cif, output_fxye, output_topas, output_stem, out_folder,
+                           output_grouping, output_stack, output_restrict)
 
 # Normalization
 # We link the normalisation sources to actual dataset locations right here, right now
@@ -523,7 +525,7 @@ def create_stem_template(ds, df, fn, frame_no):
     print 'Filename stem is now ' + stem_template
     return stem_template
 
-def process_regain(cs, all_stth, regain_data, pre_ignore):
+def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -572,6 +574,32 @@ def process_vertical_sum(cs, stth_values, vig_normalisation):
                                          top=int(vig_upper_boundary.value))
     return gs
 
+def get_stack_dims(fns, split="None"):
+    """Calculate the dimensions of stacked data. If split is None, there is one row
+    per filename, otherwise the number of frames in each file is used."""
+
+    shp = df[fns[0]].shape
+
+    if len(fns) == 1:
+        return [shp[0],shp[-1]]
+
+    for fn in fns[1:]:
+        ds = df[fn]
+        ddims = df[fn].shape
+        if ddims[1] != shp[1] or ddims[2] != shp[2]:
+            raise ValueError, "Shape mismatch when stacking multiple files: %s is %d %d but %s is %d %d" % (fns[1], shp[1], shp[2], fn, ddims[1], ddims[2])
+
+        if split == "None":
+            shp[0] += 1
+        else:
+            shp[0] += ddims[0]
+
+    print "Stacked data have dimension %s" % repr(shp)
+    return [shp[0],shp[-1]]
+    
+def accumulate_data(data_line):
+    """ Accumulate data for plot 1 into an overall array """
+    
 ''' Script Actions '''
 
 # This function is called when pushing the Run button in the control UI.
@@ -596,6 +624,15 @@ def __run_script__(fns):
         print 'no input datasets'
         return
 
+    # Initialise stacking information
+    
+    if output_stack.value:
+
+        stack_ds = instance(get_stack_dims(fns, split=str(output_grouping.value)))
+        stack_counter = 0
+
+    # Get processing parameters
+    
     norm_tar, norm_ref = process_normalise_options()
     vig_normalisation = process_rescale_options()
     group_val = grouping_options[str(output_grouping.value)]
@@ -702,7 +739,7 @@ def __run_script__(fns):
 
             if regain_apply.value:
                 try:
-                    gs = process_regain(cs, all_stth, regain_data, pre_ignore)
+                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn)
                     print 'Have new gains at %f' % (time.clock() - elapsed)
                 except ValueError as e:
                     open_error(str(e))
@@ -725,7 +762,19 @@ def __run_script__(fns):
                 send_to_plot(gs,Plot2,add=True,title="Integrated data",quantity="Counts")
             except IndexError:  #catch error from GPlot ??
                 send_to_plot(gs,Plot2,add=False,title="Integrated data",quantity="Counts")
+
+            # Stack if necessary
+            
+            if output_stack.value:
+                print "Adding to row %d" % stack_counter
+                print "%s <- %s" % (repr(stack_ds[stack_counter].shape),
+                                    repr(gs.shape))
+                stack_ds[stack_counter] = gs[:]
+                stack_ds.axes[1] = gs.axes[0]
+                stack_counter += 1
+            
             # Output datasets
+            
             try:
                 val_for_output = int(target_val)
                 format_for_output = "%03d"
@@ -745,6 +794,12 @@ def __run_script__(fns):
             #loop to next group of datasets
             current_frame_start = frame_no
             frame_no += 1
+
+        # display stacked data if requested
+
+    if output_stack.value:
+        send_to_plot(stack_ds[0:stack_counter], Plot1, add=False, title="Stack plot", quantity = "Frame")
+        return stack_ds
             
 ''' Utility functions for plots '''
 def send_to_plot(dataset,plot,add=False,title="",add_timestamp=True,quantity=""):
