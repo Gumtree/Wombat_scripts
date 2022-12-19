@@ -170,6 +170,8 @@ def getSummed(ds, applyStth=0.0):
     import time
     print 'summation of', ds.title
 
+    print 'Applying stth of %d' % applyStth
+    print 'Axis starts: %f %f %f' % (ds.axes[0][0], ds.axes[1][0], ds.axes[2][0])
     # check arguments
     if ds.ndim != 3:
         raise AttributeError('ds.ndim != 3')
@@ -237,7 +239,7 @@ def getStepSummed(ds):
         _, pixel_step, bin_size = get_wire_step(ds)
 
         if bin_size == 0:  #no significant detector movement
-            return getSummed(ds)
+            return getSummed(ds, applyStth=ds.axes[0][0])
         
         if pixel_step < 0:     # step bigger than wire separation
             pixel_step = -1 * pixel_step
