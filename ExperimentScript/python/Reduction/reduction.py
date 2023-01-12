@@ -589,7 +589,7 @@ def get_wire_step(ds):
     print "Wire sep %f for %d steps %f - %f" % (wire_sep,len(wire_pos),wire_pos[0],wire_pos[-1])
     det_steps = ds.axes[0]
     bin_size = abs(det_steps[0]-det_steps[-1])/(len(det_steps)-1)
-    if bin_size < wire_sep/100 or ds.axes[0] != "stth":
+    if bin_size < wire_sep/100: 
         print "Detector not stepped!"
         return wire_sep, 0, 0
     print "Bin size %f for %d steps %f - %f" % (bin_size,len(det_steps),det_steps[0],det_steps[-1])
