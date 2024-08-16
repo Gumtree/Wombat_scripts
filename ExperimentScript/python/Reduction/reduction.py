@@ -220,7 +220,7 @@ def getStepSummed(ds):
     if ds.ndim != 3:
         raise AttributeError('ds.ndim != 3')
     if ds.axes[2].title != 'x_pixel_angular_offset':
-        raise AttributeError('ds.axes[2].title != x_pixel_angular_offset')
+        raise AttributeError('ds.axes[2].title != x_pixel_angular_offset, is %s' % ds.axes[2].title)
 
     # sum first dimension of storage and variance
 

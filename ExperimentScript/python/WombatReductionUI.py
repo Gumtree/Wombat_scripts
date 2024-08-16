@@ -73,7 +73,11 @@ vig_apply_rescale  = Par('bool', 'True')
 vig_apply_rescale.title = 'Rescale'
 vig_rescale_target = Par('float', '10000.0')
 vig_rescale_target.title = 'Rescale to:'
-Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target)
+vig_straighten = Par('bool','False')
+vig_straighten.title = 'Straighten?'
+vig_str_interp = Par('bool', 'False')
+vig_str_interp.title = 'Straighten with interpolation?'
+Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target, vig_straighten, vig_str_interp)
 
 # Recalculate gain
 regain_apply = Par('bool','False')
@@ -333,12 +337,12 @@ def load_user_prefs(prefix = ''):
     g = globals()
     p = g.keys()
     for name in p:
-        if eval('isinstance('+ name + ',Par)'):
+        if hasattr(g[name], 'value'):
             try:
-               setattr(g[name],'value',get_prof_value(prefix+name))
+                setattr(g[name], 'value', get_prof_value(prefix+name))
             except:
                 print 'Failure setting %s to %s' % (name,str(get_prof_value(prefix+name)))
-            print 'Set %s to %s' % (name,str(eval(name+'.value')))
+            print 'Set %s to %s' % (name, str(globals()[name].value))
 
 def save_user_prefs(prefix=''):
     """Save user preferences, optionally prepending the value of
@@ -352,15 +356,30 @@ def save_user_prefs(prefix=''):
     g = globals()
     p = g.keys()
     for name in p:
-        if eval('isinstance('+ name + ',Par)'):
+        if hasattr(g[name], 'value') and name[0] != '_':
             prof_val = getattr(g[name], 'value')
             set_prof_value(prefix+name,str(prof_val))
             print 'Set %s to %s' % (prefix+name,get_prof_value(prefix+name))
             prof_names.append(name)
             prof_vals.append(str(prof_val))
-    return prof_names,prof_vals
+    return prof_names, prof_vals
 
 """ Helper routines for run_script actions """
+def getCenters(boundaries):
+        # check dimensions
+        if boundaries.ndim != 1:
+            raise AttributeError('boundaries.ndim != 1')
+        if boundaries.size < 2:
+            raise AttributeError('boundaries.size < 2')
+            
+        # result
+        rs = zeros(boundaries.size - 1) # result is one item shorter
+        
+        rs[:] = boundaries[0:-1]
+        rs   += boundaries[1:]
+        rs   *= 0.5
+
+        return rs
 
 def process_normalise_options():
     
@@ -554,6 +573,32 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
                                       ignored=ignored)
     return gs
 
+def process_straighten(cs, stth, bottom, top, interp=False):
+    from Reduction import straightening
+
+    radius = float(cs.harvest_metadata("CIF")["_pd_instr_dist_spec/detc"])
+
+    start_angles = stth
+    print "First bin is %f to %f" % (cs.axes[-1][0], cs.axes[-1][1])
+    print "Total length %d" % len(cs.axes[-1])
+    wires = getCenters(cs.axes[-1])
+    print "First wire at offset %f" % wires[0]
+    vert_size = len(cs.axes[-2]) - 1
+    vert_pos = getCenters(cs.axes[-2]) - cs.axes[-2][vert_size/2]
+    vert_pos.title = "Vertical offset"
+    wires.title = cs.axes[-1].title
+    print "Horiz axis: " + repr(wires)
+    new_ds, new_contribs = straightening.correctGeometryjv(cs, radius, start_angles, wires, vert_pos,
+                                                         bottom, top, interp=interp)
+    # Add metadata record
+
+    if not interp:
+        info_string = """Geometry was corrected by assigning each pixel to a new two theta bin based on true two theta angle, leaving vertical height unchanged."""
+    else:
+        info_string = """Geometry was corrected by dividing pixel intensity and variance between ideal true two-theta bins based on deviation from ideal bin centre. Vertical height was unchanged."""
+    new_ds.add_metadata('_pd_proc_info_data_reduction', info_string, append=True)
+    return new_ds, new_contribs
+    
 def process_vertical_sum(cs, stth_values, vig_normalisation):
     from Reduction import reduction
     # fix the axes
@@ -666,7 +711,7 @@ def __run_script__(fns):
         # Get detector positions
 
         all_stth = get_detector_positions(ds)
-
+ 
         # Prepare dataset
         
         if ds.ndim > 3:
@@ -695,6 +740,12 @@ def __run_script__(fns):
         else:
             ds = rs
 
+        # Keep axis information
+        
+        ds.axes = rs.axes
+
+        print "Axis -1 before frame splitting is " + repr(ds.axes[-1])
+        
         # Calculate filename string
 
         stem_template = create_stem_template(ds, df, fn, -1)
@@ -744,8 +795,14 @@ def __run_script__(fns):
                 except ValueError as e:
                     open_error(str(e))
                     return
+
+            if vig_str_interp.value or vig_straighten.value:
+                cs, contribs = process_straighten(cs, stth_values, int(vig_lower_boundary.value),
+                                           int(vig_upper_boundary.value),
+                                           interp = vig_str_interp.value)
+                print 'Finished straightening'
                 
-            else:  #just sum already
+            if not regain_apply.value:  #vertical summation required
 
                 print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_values[0])
                 
