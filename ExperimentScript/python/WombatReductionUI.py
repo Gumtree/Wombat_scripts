@@ -73,13 +73,11 @@ vig_apply_rescale  = Par('bool', 'True')
 vig_apply_rescale.title = 'Rescale'
 vig_rescale_target = Par('float', '10000.0')
 vig_rescale_target.title = 'Rescale to:'
-vig_zero = Par('bool', 'True')
+vig_zero = Par('bool', 'False')
 vig_zero.title = 'Exclude pixel values of 0'
 vig_straighten = Par('bool','False')
 vig_straighten.title = 'Straighten?'
-vig_str_interp = Par('bool', 'False')
-vig_str_interp.title = 'Straighten with interpolation?'
-Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target, vig_zero, vig_straighten, vig_str_interp)
+Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target, vig_zero, vig_straighten)
 
 # Recalculate gain
 regain_apply = Par('bool','False')
@@ -546,7 +544,7 @@ def create_stem_template(ds, df, fn, frame_no):
     print 'Filename stem is now ' + stem_template
     return stem_template
 
-def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
+def process_regain(cs, all_stth, regain_data, pre_ignore, fn, reapply = False):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -573,9 +571,22 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
         gain_comment = "Gains refined from file %s" % fn
         reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
                                       ignored=ignored)
+
+    # If requested, apply the new gains to the dataset
+
+    if reapply:
+        print "Back-applying gain"
+        print "Gain length %d" % len(gain)
+        print "Ignore is %d" % ignored
+        print "Total with ignorance is %d" % (len(gain) + 2 * ignored)
+        print "Actual length should be %d" % cs.shape[-1]
+        for one_gain in range(len(gain)):
+            cs[:, :, one_gain + ignored] *= gain[one_gain]
+        gs.copy_cif_metadata(cs)
+        
     return gs
 
-def process_straighten(cs, stth, bottom, top, interp=False):
+def process_straighten(cs, stth, bottom, top):
     from Reduction import straightening
 
     radius = float(cs.harvest_metadata("CIF")["_pd_instr_dist_spec/detc"])
@@ -589,15 +600,11 @@ def process_straighten(cs, stth, bottom, top, interp=False):
     vert_pos = getCenters(cs.axes[-2]) - cs.axes[-2][vert_size/2]
     vert_pos.title = "Vertical offset"
     wires.title = cs.axes[-1].title
-    print "Horiz axis: " + repr(wires)
     new_ds, new_contribs = straightening.correctGeometryjv(cs, radius, start_angles, wires, vert_pos,
-                                                         bottom, top, interp=interp)
+                                                         bottom, top)
     # Add metadata record
 
-    if not interp:
-        info_string = """Geometry was corrected by assigning each pixel to a new two theta bin based on true two theta angle, leaving vertical height unchanged."""
-    else:
-        info_string = """Geometry was corrected by dividing pixel intensity and variance between ideal true two-theta bins based on deviation from ideal bin centre. Vertical height was unchanged."""
+    info_string = """Geometry was corrected by dividing pixel intensity and variance between ideal true two-theta bins based on deviation from ideal bin centre."""
     new_ds.add_metadata('_pd_proc_info_data_reduction', info_string, append=True)
     return new_ds, new_contribs
     
@@ -791,7 +798,8 @@ def __run_script__(fns):
 
             if regain_apply.value:
                 try:
-                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn)
+                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn,
+                                        reapply = vig_straighten.value)
                     print 'Have new gains at %f' % (time.clock() - elapsed)
                 except ValueError as e:
                     open_error(str(e))
@@ -799,13 +807,12 @@ def __run_script__(fns):
 
             contribs = None
             
-            if vig_str_interp.value or vig_straighten.value:
+            if vig_straighten.value:
                 cs, contribs = process_straighten(cs, stth_values, int(vig_lower_boundary.value),
-                                           int(vig_upper_boundary.value),
-                                           interp = vig_str_interp.value)
+                                           int(vig_upper_boundary.value))
                 print 'Finished straightening'
                 
-            if not regain_apply.value:  #vertical summation required
+            if not (regain_apply.value and not vig_straighten.value):  #vertical summation required
 
                 print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_values[0])
                 
