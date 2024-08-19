@@ -73,11 +73,13 @@ vig_apply_rescale  = Par('bool', 'True')
 vig_apply_rescale.title = 'Rescale'
 vig_rescale_target = Par('float', '10000.0')
 vig_rescale_target.title = 'Rescale to:'
+vig_zero = Par('bool', 'True')
+vig_zero.title = 'Exclude pixel values of 0'
 vig_straighten = Par('bool','False')
 vig_straighten.title = 'Straighten?'
 vig_str_interp = Par('bool', 'False')
 vig_str_interp.title = 'Straighten with interpolation?'
-Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target, vig_straighten, vig_str_interp)
+Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target, vig_zero, vig_straighten, vig_str_interp)
 
 # Recalculate gain
 regain_apply = Par('bool','False')
@@ -599,7 +601,7 @@ def process_straighten(cs, stth, bottom, top, interp=False):
     new_ds.add_metadata('_pd_proc_info_data_reduction', info_string, append=True)
     return new_ds, new_contribs
     
-def process_vertical_sum(cs, stth_values, vig_normalisation):
+def process_vertical_sum(cs, stth_values, contribs=None):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([stth_values,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -609,12 +611,12 @@ def process_vertical_sum(cs, stth_values, vig_normalisation):
 
     print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
     print 'stth values' + `stth_values`
-    es, okmap = reduction.getStepSummed(cs)  # does axis correction as well
+    es, okmap = reduction.getStepSummed(cs, contribs = contribs, use_zeros = vig_zero.value)  # does axis correction as well
     es.copy_cif_metadata(cs)
     print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
     Plot1.set_dataset(es)
     
-    gs = reduction.getVerticalIntegrated(es, okmap=okmap, axis=0, normalization=vig_normalisation,
+    gs = reduction.getVerticalIntegrated(es, okmap=okmap, axis=0, normalization=process_rescale_options(),
                                          bottom = int(vig_lower_boundary.value),
                                          top=int(vig_upper_boundary.value))
     return gs
@@ -679,7 +681,6 @@ def __run_script__(fns):
     # Get processing parameters
     
     norm_tar, norm_ref = process_normalise_options()
-    vig_normalisation = process_rescale_options()
     group_val = grouping_options[str(output_grouping.value)]
 
     # The error dialog only works at this level it seems, so anything that
@@ -796,6 +797,8 @@ def __run_script__(fns):
                     open_error(str(e))
                     return
 
+            contribs = None
+            
             if vig_str_interp.value or vig_straighten.value:
                 cs, contribs = process_straighten(cs, stth_values, int(vig_lower_boundary.value),
                                            int(vig_upper_boundary.value),
@@ -811,7 +814,7 @@ def __run_script__(fns):
                     
                 # sum the input frames
 
-                gs = process_vertical_sum(cs, stth_values, vig_normalisation)
+                gs = process_vertical_sum(cs, stth_values, contribs = contribs)
                 
             if target_val != "":
                 gs.title = gs.title + "_" + str(target_val)
