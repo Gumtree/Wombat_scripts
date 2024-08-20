@@ -73,7 +73,11 @@ vig_apply_rescale  = Par('bool', 'True')
 vig_apply_rescale.title = 'Rescale'
 vig_rescale_target = Par('float', '10000.0')
 vig_rescale_target.title = 'Rescale to:'
-Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target)
+vig_zero = Par('bool', 'False')
+vig_zero.title = 'Exclude pixel values of 0'
+vig_straighten = Par('bool','False')
+vig_straighten.title = 'Straighten?'
+Group('Vertical Integration').add(vig_lower_boundary, vig_upper_boundary, vig_apply_rescale, vig_rescale_target, vig_zero, vig_straighten)
 
 # Recalculate gain
 regain_apply = Par('bool','False')
@@ -333,12 +337,12 @@ def load_user_prefs(prefix = ''):
     g = globals()
     p = g.keys()
     for name in p:
-        if eval('isinstance('+ name + ',Par)'):
+        if hasattr(g[name], 'value'):
             try:
-               setattr(g[name],'value',get_prof_value(prefix+name))
+                setattr(g[name], 'value', get_prof_value(prefix+name))
             except:
                 print 'Failure setting %s to %s' % (name,str(get_prof_value(prefix+name)))
-            print 'Set %s to %s' % (name,str(eval(name+'.value')))
+            print 'Set %s to %s' % (name, str(globals()[name].value))
 
 def save_user_prefs(prefix=''):
     """Save user preferences, optionally prepending the value of
@@ -352,15 +356,30 @@ def save_user_prefs(prefix=''):
     g = globals()
     p = g.keys()
     for name in p:
-        if eval('isinstance('+ name + ',Par)'):
+        if hasattr(g[name], 'value') and name[0] != '_':
             prof_val = getattr(g[name], 'value')
             set_prof_value(prefix+name,str(prof_val))
             print 'Set %s to %s' % (prefix+name,get_prof_value(prefix+name))
             prof_names.append(name)
             prof_vals.append(str(prof_val))
-    return prof_names,prof_vals
+    return prof_names, prof_vals
 
 """ Helper routines for run_script actions """
+def getCenters(boundaries):
+        # check dimensions
+        if boundaries.ndim != 1:
+            raise AttributeError('boundaries.ndim != 1')
+        if boundaries.size < 2:
+            raise AttributeError('boundaries.size < 2')
+            
+        # result
+        rs = zeros(boundaries.size - 1) # result is one item shorter
+        
+        rs[:] = boundaries[0:-1]
+        rs   += boundaries[1:]
+        rs   *= 0.5
+
+        return rs
 
 def process_normalise_options():
     
@@ -525,7 +544,7 @@ def create_stem_template(ds, df, fn, frame_no):
     print 'Filename stem is now ' + stem_template
     return stem_template
 
-def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
+def process_regain(cs, all_stth, regain_data, pre_ignore, fn, reapply = False):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -552,9 +571,44 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn):
         gain_comment = "Gains refined from file %s" % fn
         reduction.store_regain_values(str(regain_store_filename.value),gain,gain_comment,
                                       ignored=ignored)
+
+    # If requested, apply the new gains to the dataset
+
+    if reapply:
+        print "Back-applying gain"
+        print "Gain length %d" % len(gain)
+        print "Ignore is %d" % ignored
+        print "Total with ignorance is %d" % (len(gain) + 2 * ignored)
+        print "Actual length should be %d" % cs.shape[-1]
+        for one_gain in range(len(gain)):
+            cs[:, :, one_gain + ignored] *= gain[one_gain]
+        gs.copy_cif_metadata(cs)
+        
     return gs
 
-def process_vertical_sum(cs, stth_values, vig_normalisation):
+def process_straighten(cs, stth, bottom, top):
+    from Reduction import straightening
+
+    radius = float(cs.harvest_metadata("CIF")["_pd_instr_dist_spec/detc"])
+
+    start_angles = stth
+    print "First bin is %f to %f" % (cs.axes[-1][0], cs.axes[-1][1])
+    print "Total length %d" % len(cs.axes[-1])
+    wires = getCenters(cs.axes[-1])
+    print "First wire at offset %f" % wires[0]
+    vert_size = len(cs.axes[-2]) - 1
+    vert_pos = getCenters(cs.axes[-2]) - cs.axes[-2][vert_size/2]
+    vert_pos.title = "Vertical offset"
+    wires.title = cs.axes[-1].title
+    new_ds, new_contribs = straightening.correctGeometryjv(cs, radius, start_angles, wires, vert_pos,
+                                                         bottom, top)
+    # Add metadata record
+
+    info_string = """Geometry was corrected by dividing pixel intensity and variance between ideal true two-theta bins based on deviation from ideal bin centre."""
+    new_ds.add_metadata('_pd_proc_info_data_reduction', info_string, append=True)
+    return new_ds, new_contribs
+    
+def process_vertical_sum(cs, stth_values, contribs=None):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([stth_values,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -564,12 +618,12 @@ def process_vertical_sum(cs, stth_values, vig_normalisation):
 
     print 'cs axes: ' + cs.axes[0].title + ' ' + cs.axes[1].title + ' ' + cs.axes[2].title
     print 'stth values' + `stth_values`
-    es, okmap = reduction.getStepSummed(cs)  # does axis correction as well
+    es, okmap = reduction.getStepSummed(cs, contribs = contribs, use_zeros = vig_zero.value)  # does axis correction as well
     es.copy_cif_metadata(cs)
     print 'es axes: ' + `es.axes[0].title` + es.axes[1].title
     Plot1.set_dataset(es)
     
-    gs = reduction.getVerticalIntegrated(es, okmap=okmap, axis=0, normalization=vig_normalisation,
+    gs = reduction.getVerticalIntegrated(es, okmap=okmap, axis=0, normalization=process_rescale_options(),
                                          bottom = int(vig_lower_boundary.value),
                                          top=int(vig_upper_boundary.value))
     return gs
@@ -634,7 +688,6 @@ def __run_script__(fns):
     # Get processing parameters
     
     norm_tar, norm_ref = process_normalise_options()
-    vig_normalisation = process_rescale_options()
     group_val = grouping_options[str(output_grouping.value)]
 
     # The error dialog only works at this level it seems, so anything that
@@ -666,7 +719,7 @@ def __run_script__(fns):
         # Get detector positions
 
         all_stth = get_detector_positions(ds)
-
+ 
         # Prepare dataset
         
         if ds.ndim > 3:
@@ -695,6 +748,12 @@ def __run_script__(fns):
         else:
             ds = rs
 
+        # Keep axis information
+        
+        ds.axes = rs.axes
+
+        print "Axis -1 before frame splitting is " + repr(ds.axes[-1])
+        
         # Calculate filename string
 
         stem_template = create_stem_template(ds, df, fn, -1)
@@ -705,10 +764,10 @@ def __run_script__(fns):
             
         # perform grouping of sequential input frames 
         # we accumulate the equivalent total monitor 
-        # counts for requested normalisation later  
+        # counts for requested normalisation later
 
         while frame_no <= start_frames:
-            if regain_apply.value or group_val is None:   #take them all
+            if regain_apply.value or len(ds) == 1 or group_val == None:   #take them all
                 frame_no = start_frames
                 target_val = ""
             else:         # use value to work out range
@@ -739,13 +798,21 @@ def __run_script__(fns):
 
             if regain_apply.value:
                 try:
-                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn)
+                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn,
+                                        reapply = vig_straighten.value)
                     print 'Have new gains at %f' % (time.clock() - elapsed)
                 except ValueError as e:
                     open_error(str(e))
                     return
+
+            contribs = None
+            
+            if vig_straighten.value:
+                cs, contribs = process_straighten(cs, stth_values, int(vig_lower_boundary.value),
+                                           int(vig_upper_boundary.value))
+                print 'Finished straightening'
                 
-            else:  #just sum already
+            if not (regain_apply.value and not vig_straighten.value):  #vertical summation required
 
                 print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_values[0])
                 
@@ -754,7 +821,7 @@ def __run_script__(fns):
                     
                 # sum the input frames
 
-                gs = process_vertical_sum(cs, stth_values, vig_normalisation)
+                gs = process_vertical_sum(cs, stth_values, contribs = contribs)
                 
             if target_val != "":
                 gs.title = gs.title + "_" + str(target_val)

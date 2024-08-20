@@ -164,7 +164,7 @@ def applyNormalization(ds, reference, target=-1):
     print 'normalized:', ds.title
     return target
 
-def getSummed(ds, applyStth=0.0):
+def getSummed(ds, applyStth=0.0, contribs = None, use_zeros = False):
     """ A faster version of Dataset.intg which discards a lot of the
     metadata handling that intg needs to do"""
     import time
@@ -197,7 +197,10 @@ def getSummed(ds, applyStth=0.0):
         rs.axes[0] = ds.axes[1]
 
     ok_map = ones(rs.shape)
-    ok_map[rs <= 0] = 0
+    if contribs != None:
+        ok_map = contribs[0]  #should be identical for all
+    elif use_zeros:
+        ok_map[rs <= 0] = 0
 
     rs.title = ds.title
 
@@ -210,9 +213,11 @@ def getSummed(ds, applyStth=0.0):
     print 'Output dtype' + `rs.dtype`
     return rs, ok_map
 
-def getStepSummed(ds):
+def getStepSummed(ds, contribs = None, use_zeros=False):
     """ As for `getSummed`, but additionally offsets each frame to model 2th
-    movement between frames. """
+    movement between frames. `contribs`, if present, is non-zero for active
+    pixels. If `use_zeros` is `True`, zero-valued pixels are ignored. `use_zeros`
+    is ignored if `contribs` is not None."""
     import time
     print 'step summation of', ds.title
 
@@ -220,7 +225,7 @@ def getStepSummed(ds):
     if ds.ndim != 3:
         raise AttributeError('ds.ndim != 3')
     if ds.axes[2].title != 'x_pixel_angular_offset':
-        raise AttributeError('ds.axes[2].title != x_pixel_angular_offset')
+        raise AttributeError('ds.axes[2].title != x_pixel_angular_offset, is %s' % ds.axes[2].title)
 
     # sum first dimension of storage and variance
 
@@ -231,7 +236,10 @@ def getStepSummed(ds):
     if frame_count == 1:
         rs = ds.get_reduced()
         ok_map = ones(rs.shape)
-        ok_map[rs<=0]=0
+        if use_zeros and contribs == None:
+            ok_map[rs<=0]=0
+        elif contribs != None:
+            ok_map = contribs.get_reduced()
         new_axis = ds.axes[2] + ds.axes[0][0]
     else:
             # calculate step size as a proportion of x pixel step
@@ -239,7 +247,7 @@ def getStepSummed(ds):
         _, pixel_step, bin_size = get_wire_step(ds)
 
         if bin_size == 0:  #no significant detector movement
-            return getSummed(ds, applyStth=ds.axes[0][0])
+            return getSummed(ds, applyStth=ds.axes[0][0], contribs = contribs, use_zeros = use_zeros)
         
         if pixel_step < 0:     # step bigger than wire separation
             pixel_step = -1 * pixel_step
@@ -253,14 +261,20 @@ def getStepSummed(ds):
         base_data = zeros(new_shape)
         base_var = zeros(new_shape)
         ok_map = zeros(new_shape)
+        
         for frame in xrange(0, frame_count):
             start_index = frame*pixel_step
             finish_index = ds.shape[2]+frame*pixel_step
             base_data[:,start_index:finish_index]  += ds.storage[frame]
             base_var[:,start_index:finish_index]   += ds.var[frame]
             mask = ones(ds[frame].shape)
-            mask[ds.storage[frame]<=0]=0
-            ok_map[:,start_index:finish_index] += mask
+            if contribs != None:
+                ok_map[:, start_index:finish_index] += contribs[frame]
+            elif use_zeros:
+                mask[ds.storage[frame]<=0]=0
+                ok_map[:,start_index:finish_index] += mask
+            else:
+                ok_map[:,start_index:finish_index] += mask
 
         # finalize result
         rs = Dataset(base_data)
@@ -306,9 +320,6 @@ def get_collapsed(ds):
 def getVerticalIntegrated(ds, okmap=None, normalization=-1, axis=1,top=None,bottom=None):
     print 'vertical integration of', ds.title
     start_dim = ds.ndim
-
-    if (okmap is not None) and (okmap.ndim != 2):
-        raise AttributeError('okMap.ndim != 2')
 
     # check shape
     if (okmap is not None) and (ds.shape != okmap.shape):
