@@ -751,8 +751,6 @@ def __run_script__(fns):
         # Keep axis information
         
         ds.axes = rs.axes
-
-        print "Axis -1 before frame splitting is " + repr(ds.axes[-1])
         
         # Calculate filename string
 
