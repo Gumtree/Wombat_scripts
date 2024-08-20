@@ -10,7 +10,7 @@ __datasource__ = __register__.getDataSourceViewer()
 
 # Axis setup
 # possible rotation axes
-rot_table = {'Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
+rot_table = {'Magnet Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
              'Sample stage':('/entry1/sample/rotate','Omega','Degrees'),
              'Magnet temperature (HE)':('/entry1/sample/tc1/Loop1/sensor',
                                             'Temperature','Kelvin'),
