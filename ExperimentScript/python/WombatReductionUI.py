@@ -764,10 +764,10 @@ def __run_script__(fns):
             
         # perform grouping of sequential input frames 
         # we accumulate the equivalent total monitor 
-        # counts for requested normalisation later  
+        # counts for requested normalisation later
 
         while frame_no <= start_frames:
-            if regain_apply.value or group_val is None:   #take them all
+            if regain_apply.value or len(ds) == 1 or group_val == None:   #take them all
                 frame_no = start_frames
                 target_val = ""
             else:         # use value to work out range

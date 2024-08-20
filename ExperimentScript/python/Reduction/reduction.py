@@ -239,7 +239,7 @@ def getStepSummed(ds, contribs = None, use_zeros=False):
         if use_zeros and contribs == None:
             ok_map[rs<=0]=0
         elif contribs != None:
-            ok_map = contribs
+            ok_map = contribs.get_reduced()
         new_axis = ds.axes[2] + ds.axes[0][0]
     else:
             # calculate step size as a proportion of x pixel step
@@ -320,9 +320,6 @@ def get_collapsed(ds):
 def getVerticalIntegrated(ds, okmap=None, normalization=-1, axis=1,top=None,bottom=None):
     print 'vertical integration of', ds.title
     start_dim = ds.ndim
-
-    if (okmap is not None) and (okmap.ndim != 2):
-        raise AttributeError('okMap.ndim != 2')
 
     # check shape
     if (okmap is not None) and (ds.shape != okmap.shape):
