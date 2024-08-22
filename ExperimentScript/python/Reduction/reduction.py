@@ -783,7 +783,7 @@ def do_overlap(ds,iterno,algo="FordRollett",unit_weights=False,top=None,bottom=N
     print 'Total %d points in output data' % len(cs)
     # prepare info for CIF file
     import math
-    detno = map(lambda a:"%d" % a,range(len(gain)))
+    detno = map(lambda a:"%d" % (a+ignore),range(len(gain)))
     gain_as_strings = map(lambda a:"%.4f" % a,gain)
     gain_esd = ["%.4f" % a for a in esds]
     cs.harvest_metadata("CIF").AddCifItem((
