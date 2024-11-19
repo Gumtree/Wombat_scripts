@@ -581,7 +581,7 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn, reapply = False):
         print "Total with ignorance is %d" % (len(gain) + 2 * ignored)
         print "Actual length should be %d" % cs.shape[-1]
         for one_gain in range(len(gain)):
-            cs[:, :, one_gain + ignored] *= gain[one_gain]
+            cs[:, :, one_gain + ignored] /= gain[one_gain]
         gs.copy_cif_metadata(cs)
         
     return gs
@@ -714,7 +714,7 @@ def __run_script__(fns):
         # extract and store basic metadata
 
         ds = reduction.AddCifMetadata.extract_metadata(ds)
-        reduction.AddCifMetadata.store_reduction_preferences(ds,prof_names,prof_values)
+        reduction.AddCifMetadata.store_reduction_preferences(ds, prof_names, prof_values)
 
         # Get detector positions
 
@@ -792,7 +792,10 @@ def __run_script__(fns):
 
             stem_template = create_stem_template(ds, df, fn, current_frame_start)
 
-            # check if we are recalculating gain 
+            # check if we are recalculating gain
+            # if we will straighten afterwards, cs will be altered in-place
+            # with the redetermined gains. gs is the vertically-summed
+            # result, which is ignored if straightening is done.
 
             if regain_apply.value:
                 try:
@@ -806,6 +809,7 @@ def __run_script__(fns):
             contribs = None
             
             if vig_straighten.value:
+                
                 cs, contribs = process_straighten(cs, stth_values, int(vig_lower_boundary.value),
                                            int(vig_upper_boundary.value))
                 print 'Finished straightening'
