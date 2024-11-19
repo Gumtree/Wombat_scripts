@@ -342,17 +342,28 @@ def nonzero_gain(ds,minlevel=0):
     eff_array[gain>0] = 1.0/gain
     print 'Efficiency array setting took until %f' % (time.time() - starttime)
     print 'Check: element (64,64) is %f' % (eff_array[64,64])
+
     # now take account of the inverse
+
     eff_error[gain>0] = var_final*(eff_array)**4 
     print 'Variance array setting took until %f' % (time.time() - starttime)
     print 'Check: err on element (64,64) is %f' % (math.sqrt(eff_error[64,64]))
+
     # Check for missed pixels
+    
     nonzero_contribs = array.zeros(gain.shape,int)
     nonzero_contribs[gain>0] = 1
     contrib_list = nonzero_contribs.sum(axis=1)
-    dodgy = contrib_list[contrib_list>0 and contrib_list < max(contrib_list)].shape[0]
+    dodgy = 0
+    for d in range(contrib_list.shape[0]):
+        if contrib_list[d] > 0 and contrib_list[d] < max(contrib_list):
+            dodgy++
+
+    # Below line used to work
+    # dodgy = contrib_list[contrib_list>0 and contrib_list < max(contrib_list)].shape[0]
     print 'Found %d dodgy columns' % dodgy
     print 'Column Pixels'
+
     for i in range(len(contrib_list)):
         if contrib_list[i]>0 and contrib_list[i]<128:
             print "%d %d" % (i,contrib_list[i])
