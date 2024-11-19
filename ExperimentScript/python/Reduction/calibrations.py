@@ -240,7 +240,12 @@ def peak_find(intensity_list,min_val=100,sig_val=10):
     above the background"""
     import math,sys
     # remove all very low values
-    backave = intensity_list[intensity_list>min_val].sum()/intensity_list[intensity_list>min_val].size
+    ii = zeros_like(intensity_list)
+    ii[intensity_list > min_val] = intensity_list
+    int_sum = ii.sum()
+    ii[intensity_list > min_val] = 1
+    dpoints = ii.sum()
+    backave = int_sum/dpoints
     print 'Peak search:average background in one frame %f' % backave
     length = len(intensity_list)
     frame_temp = copy(intensity_list)   #copy
@@ -361,6 +366,7 @@ def nonzero_gain(ds,minlevel=0):
 
     # Below line used to work
     # dodgy = contrib_list[contrib_list>0 and contrib_list < max(contrib_list)].shape[0]
+
     print 'Found %d dodgy columns' % dodgy
     print 'Column Pixels'
 
