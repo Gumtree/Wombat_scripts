@@ -592,9 +592,13 @@ def process_straighten(cs, stth, bottom, top):
     radius = float(cs.harvest_metadata("CIF")["_pd_instr_dist_spec/detc"])
 
     start_angles = stth
-    print "First bin is %f to %f" % (cs.axes[-1][0], cs.axes[-1][1])
     print "Total length %d" % len(cs.axes[-1])
-    wires = getCenters(cs.axes[-1])
+    if len(cs.axes[-1]) == cs.shape[-1] + 1:
+        print "First bin is %f to %f" % (cs.axes[-1][0], cs.axes[-1][1])
+        wires = getCenters(cs.axes[-1])
+    else:
+        print "First wire is at %f" % cs.axes[-1][0]
+        wires = cs.axes[-1]
     print "First wire at offset %f" % wires[0]
     vert_size = len(cs.axes[-2]) - 1
     vert_pos = getCenters(cs.axes[-2]) - cs.axes[-2][vert_size/2]
