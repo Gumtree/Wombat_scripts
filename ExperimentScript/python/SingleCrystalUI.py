@@ -15,6 +15,8 @@ rot_table = {'Magnet Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
              'Magnet temperature (HE)':('/entry1/sample/tc1/Loop1/sensor',
                                             'Temperature','Kelvin'),
              'Euler omega':('/entry1/sample/euler_omega','Omega','Degrees'),
+             'Euler phi':('/entry1/sample/euler_phi', 'Phi', 'Degrees'),
+             'Euler chi':('/entry1/sample/euler_chi', 'Chi', 'Degrees'),
              'Sample temperature (Magnet stick 1)':('/entry1/sample/tc1/Loop2/sensor',
                                             'Temperature','Kelvin'),
              'Sample temperature (Vacuum furnace)':('/entry1/sample/tc1/sensor',
@@ -309,7 +311,7 @@ def load_user_prefs(prefix = ''):
     g = globals()
     p = g.keys()
     for name in p:
-        if eval('isinstance('+ name + ',Par)'):
+        if hasattr(g[name], 'value'):
             try:
                setattr(g[name],'value',get_prof_value(prefix+name))
             except:
@@ -328,8 +330,7 @@ def save_user_prefs(prefix=''):
     g = globals()
     p = g.keys()
     for name in p:
-        if eval('isinstance('+ name + ',Par)'):
-            print `name`
+        if hasattr(g[name], 'value') and name[0] != '_':
             prof_val = getattr(g[name], 'value')
             print str(prof_val)
             set_prof_value(prefix+name,str(prof_val))
@@ -454,7 +455,7 @@ def __run_script__(fns):
         rs.set_axes([rot_values,stth + ds.axes[2]],['Angle',vert_axis_name],['Degrees',units])
         Plot1.set_dataset(rs)
         Plot1.title = rs.title
-        Plot1.x_label = 'Angle (degrees)'
+        Plot1.x_label = 'Two theta (degrees)'
         Plot1.y_label = vert_axis_name + ' (' + units + ')'
         # no output yet
         """   filename_base = join(str(out_folder.value),basename(str(fn))[:-7]+'_'+str(output_stem.value)+"_"+str(target_val))

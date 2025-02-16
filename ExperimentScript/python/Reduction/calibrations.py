@@ -362,7 +362,7 @@ def nonzero_gain(ds,minlevel=0):
     dodgy = 0
     for d in range(contrib_list.shape[0]):
         if contrib_list[d] > 0 and contrib_list[d] < max(contrib_list):
-            dodgy++
+            dodgy+=1
 
     # Below line used to work
     # dodgy = contrib_list[contrib_list>0 and contrib_list < max(contrib_list)].shape[0]
