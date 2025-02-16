@@ -73,6 +73,10 @@ def getCenters(boundaries):
         rs   += boundaries[1:]
         rs   *= 0.5
 
+        print "Converted %f to %f (%d) to %f to %f (%d)" % (boundaries[0], boundaries[-1],
+                                                            len(boundaries), rs[0], rs[-1],
+                                                            len(rs))
+
         return rs
     
 def applyNormalization(ds, reference, target=-1):
@@ -180,6 +184,16 @@ def getSummed(ds, applyStth=0.0, contribs = None, use_zeros = False):
 
     # sum first dimension of storage and variance
     frame_count = ds.shape[0]
+
+    # make sure we are using pixel centres not boundaries
+
+    if len(ds.axes[-1]) == ds.shape[-1] + 1:
+        title = ds.axes[-1].title
+        units = ds.axes[-1].units
+        ds.axes[-1] = getCenters(ds.axes[-1])
+        ds.axes[-1].title = title
+        ds.axes[-1].units = units
+        
     # detect single frames
     if frame_count == 1:
         rs = ds.get_reduced()
@@ -211,6 +225,7 @@ def getSummed(ds, applyStth=0.0, contribs = None, use_zeros = False):
     print 'summed frames:', frame_count
     rs.copy_cif_metadata(ds)
     print 'Output dtype' + `rs.dtype`
+    assert len(rs.axes[1]) == rs.shape[-1]
     return rs, ok_map
 
 def getStepSummed(ds, contribs = None, use_zeros=False):
@@ -231,6 +246,15 @@ def getStepSummed(ds, contribs = None, use_zeros=False):
 
     frame_count = ds.shape[0]
 
+    # make sure we have pixel positions not boundaries
+
+    if len(ds.axes[2]) == ds.shape[-1] + 1:
+        title = ds.axes[-1].title
+        units = ds.axes[-1].units
+        ds.axes[2] = getCenters(ds.axes[2])
+        ds.axes[2].title = title
+        ds.axes[2].units = units
+ 
     # detect single frames
 
     if frame_count == 1:
@@ -252,10 +276,10 @@ def getStepSummed(ds, contribs = None, use_zeros=False):
         if pixel_step < 0:     # step bigger than wire separation
             pixel_step = -1 * pixel_step
             extra_width = pixel_step * (frame_count - 1)
-            extra_points =  ds.axes[2][-1] + bin_size*arange(extra_width) + ds.axes[0][0]# step by wire separation
+            extra_points =  ds.axes[2][-1] + bin_size*(arange(extra_width)+1) + ds.axes[0][0]# step by wire separation
         else:                  # step by stth step
             extra_width = pixel_step * (frame_count - 1)
-            extra_points = ds.axes[2][-1]+ds.axes[0]
+            extra_points = ds.axes[2][-1] + ds.axes[0][1:]
         print "Pixel_step %d, bin size %f, extra %f" % (pixel_step, bin_size, extra_width)
         new_shape = ds.shape[1],ds.shape[2]+ int(extra_width)
         base_data = zeros(new_shape)
@@ -280,7 +304,9 @@ def getStepSummed(ds, contribs = None, use_zeros=False):
         rs = Dataset(base_data)
         rs.var = base_var
         new_axis = zeros(ds.axes[2].shape[0]+int(extra_width))
+        print 'New axis length is %d + %d' % (ds.axes[2].shape[0], int(extra_width))
         new_axis[0:ds.axes[2].shape[0]] = ds.axes[2]+ds.axes[0][0]
+        print 'Original 2theta: %s to %s' % (new_axis[0], new_axis[ds.axes[2].shape[0]-1])
         new_axis[ds.axes[2].shape[0]:] = extra_points
         print "Extra points " + repr(new_axis[ds.axes[2].shape[0]:])
         rs.axes[0] = ds.axes[1]
