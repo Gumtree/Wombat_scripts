@@ -809,7 +809,7 @@ def __run_script__(fns):
         # counts for requested normalisation later
 
         while frame_no <= start_frames:
-            if regain_apply.value or len(ds) == 1 or group_val == None:   #take them all
+            if (regain_apply.value and len(regain_data)==0) or len(ds) == 1 or group_val == None:   #take them all
                 frame_no = start_frames
                 target_val = ""
             else:         # use value to work out range
@@ -858,8 +858,10 @@ def __run_script__(fns):
                 cs, contribs = process_straighten(cs, stth_values, int(vig_lower_boundary.value),
                                            int(vig_upper_boundary.value))
                 print 'Finished straightening'
-                
-            if not (regain_apply.value and not vig_straighten.value):  #vertical summation required
+          
+            # Vertical summation has already happened if we have refined
+            # a gain correction and not straightened, otherwise do it
+            if not regain_apply.value or (regain_apply.value and (vig_straighten.value or len(regain_data)>0)):      
 
                 print 'Summing frames from %d to %d, shape %s, start 2th %f' % (current_frame_start,frame_no-1,cs.shape,stth_values[0])
                 
