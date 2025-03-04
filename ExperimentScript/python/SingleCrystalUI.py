@@ -17,6 +17,7 @@ rot_table = {'Magnet Sample rotation':('/entry1/sample/msom','Omega','Degrees'),
              'Euler omega':('/entry1/sample/euler_omega','Omega','Degrees'),
              'Euler phi':('/entry1/sample/euler_phi', 'Phi', 'Degrees'),
              'Euler chi':('/entry1/sample/euler_chi', 'Chi', 'Degrees'),
+             'HV phi':('/entry1/sample/phi','Phi', 'Degrees' ),
              'Sample temperature (Magnet stick 1)':('/entry1/sample/tc1/Loop2/sensor',
                                             'Temperature','Kelvin'),
              'Sample temperature (Vacuum furnace)':('/entry1/sample/tc1/sensor',
@@ -266,7 +267,7 @@ def frame_display_act():
     Plot2.x_label = 'Two theta (degrees)'
     # Put the 1D version in Plot3
     stacked = Plot1.get_dataset()
-    Plot3.set_dataset(ff[target_frame])
+    Plot3.set_dataset(stacked[target_frame])
 
     
 def dspacing_change():
@@ -439,11 +440,15 @@ def __run_script__(fns):
         try:
             rot_values = ds[rot_info]
         except:
+            print "Unable to find %s, trying another way" % rot_info
             try:
                 rot_values = SimpleData(ds.__iNXroot__.findContainerByPath(rot_info))
             except:
                 rot_values = arange(rs.shape[1])
                 units = 'Step Number'
+        if rot_values == None:
+            rot_values = arange(rs.shape[1])
+            units = "Step Number"
         stth = ds.stth[0]
         vert_axis_name = rot_table[str(rot_axis.value)][1]
         print '%s:%s' % (vert_axis_name,repr(rot_values))

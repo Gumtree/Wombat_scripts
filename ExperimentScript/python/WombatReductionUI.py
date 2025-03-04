@@ -459,6 +459,7 @@ def process_rescale_options():
     return vig_normalisation
 
 def process_regain_options():
+    from Reduction import reduction
     regain_data = []
     pre_ignore = 0
     if regain_load.value:
@@ -513,7 +514,8 @@ def create_stem_template(ds, df, fn, frame_no):
     import re
     temp_table = {"%t1":("/entry1/sample/tc1/sensor/sensorValueA","%.1fK"),
                   "%t2":("/entry1/sample/tc1/sensor/sensorValueB","%.1fK"),
-                  "%vf":("/entry1/sample/tc1/sensor","%.0fC")
+                  "%vf":("/entry1/sample/tc1/sensor","%.0fC"),
+                  "%phi":("/entry1/sample/phi","%04.0fd")
                   }
     stem_template = str(output_stem.value)
     stem_template = re.sub(r'[^\w+=()*^@~:{}\[\].%-]','_',stem_template)
