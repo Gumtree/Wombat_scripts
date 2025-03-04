@@ -121,6 +121,12 @@ ps_dspacing = Par('bool',False,command='dspacing_change()')
 ps_dspacing.title = 'd spacing'
 Group('Plot settings').add(ps_plotname,ps_dspacing)
 
+# Load from pdCIF file
+pdcif_load = Act('pdcif_load_proc()', 'Load')
+pdcif_loc = Par('file')
+pdcif_loc.title = "pdCIF location"
+Group('Load parameters from pdCIF').add(pdcif_loc, pdcif_load)
+
 ''' Load Preferences '''
 
 efficiency_file_uri     = __UI__.getPreference("au.gov.ansto.bragg.wombat.ui:efficiency_file_uri")
@@ -295,6 +301,23 @@ def plh_delete_proc():
             if ds.title == dataset:
                 target_plot.remove_dataset(ds)
 
+def pdcif_load_proc():
+
+    from Formats import inputs
+    pd_loc = str(pdcif_loc.value)
+    pardic = inputs.load_params_from_pdcif(pd_loc)
+    # Run through our parameters, looking for the corresponding
+    # preferences
+    g = globals()
+    p = g.keys()
+    for name in p:
+        if pardic.has_key(name) and hasattr(g[name], 'value'):
+            try:
+                setattr(g[name], 'value', pardic[name])
+            except:
+                print 'Failure setting %s to %s' % (name,str(pardic[name]))
+            print 'Set %s to %s' % (name, str(globals()[name].value))
+    
 def dspacing_change():
     """Toggle the display of d spacing on the horizontal axis"""
     global Plot2,Plot3
@@ -720,7 +743,7 @@ def __run_script__(fns):
 
         # Check possible errors
 
-        if len(regain_data) + 2*pre_ignore != ds.shape[-1]:
+        if len(regain_data) > 0 and len(regain_data) + 2*pre_ignore != ds.shape[-1]:
             open_error("Loaded regain data has wrong length for %s: loaded %d, dataset %d" %
                        (fn, len(regain_data) + 2*pre_ignore, ds.shape[-1]))
             continue
