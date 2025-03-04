@@ -544,7 +544,7 @@ def create_stem_template(ds, df, fn, frame_no):
     print 'Filename stem is now ' + stem_template
     return stem_template
 
-def process_regain(cs, all_stth, regain_data, pre_ignore, fn, reapply = False):
+def process_regain(cs, all_stth, fn, reapply = False):
     from Reduction import reduction
     # fix the axes
     cs.set_axes([all_stth,cs.axes[1],cs.axes[2]],anames=["Azimuthal angle",
@@ -557,8 +557,8 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn, reapply = False):
     #if regain_dump_tubes.value:
     #    dumpfile = filename_base+".tubes"
     gs,gain,esds,chisquared,no_overlaps,ignored = reduction.do_overlap(cs,regain_iterno.value,bottom=bottom,top=top,
-                                                                           drop_frames="",drop_wires="0:6",use_gains=regain_data,dumpfile=dumpfile,
-                                                                           do_sum=regain_sum.value, fix_ignore=pre_ignore)
+                                                                           drop_frames="",drop_wires="0:6",dumpfile=dumpfile,
+                                                                           do_sum=regain_sum.value)
         
     fg = Dataset(gain)
     fg.var = esds**2
@@ -575,16 +575,19 @@ def process_regain(cs, all_stth, regain_data, pre_ignore, fn, reapply = False):
     # If requested, apply the new gains to the dataset
 
     if reapply:
-        print "Back-applying gain"
-        print "Gain length %d" % len(gain)
-        print "Ignore is %d" % ignored
-        print "Total with ignorance is %d" % (len(gain) + 2 * ignored)
-        print "Actual length should be %d" % cs.shape[-1]
-        for one_gain in range(len(gain)):
-            cs[:, :, one_gain + ignored] /= gain[one_gain]
+        apply_regain_values(cs, gain, ignored)
         gs.copy_cif_metadata(cs)
         
     return gs
+
+def apply_regain_values(ds, loaded_values, ignored):
+    print "Back-applying gain"
+    print "Gain length %d" % len(loaded_values)
+    print "Ignore is %d" % ignored
+    print "Total with ignorance is %d" % (len(loaded_values) + 2 * ignored)
+    print "Actual length should be %d" % ds.shape[-1]
+    for one_gain in range(len(loaded_values)):
+        ds[:, :, one_gain + ignored] /= loaded_values[one_gain]
 
 def process_straighten(cs, stth, bottom, top):
     from Reduction import straightening
@@ -704,7 +707,7 @@ def __run_script__(fns):
     except ValueError as e:
         open_error(str(e))
         return
-    
+
     # iterate through input datasets
     # note that the normalisation target (an arbitrary number) is set by
     # the first dataset unless it has already been specified.
@@ -715,6 +718,13 @@ def __run_script__(fns):
 
         ds = df[fn]
 
+        # Check possible errors
+
+        if len(regain_data) + 2*pre_ignore != ds.shape[-1]:
+            open_error("Loaded regain data has wrong length for %s: loaded %d, dataset %d" %
+                       (fn, len(regain_data) + 2*pre_ignore, ds.shape[-1]))
+            continue
+                       
         # extract and store basic metadata
 
         ds = reduction.AddCifMetadata.extract_metadata(ds)
@@ -752,6 +762,11 @@ def __run_script__(fns):
         else:
             ds = rs
 
+        # Apply additionally any stored regain values
+
+        if len(regain_data) > 0:
+            apply_regain_values(ds, regain_data, pre_ignore)
+            
         # Keep axis information
         
         ds.axes = rs.axes
@@ -800,11 +815,12 @@ def __run_script__(fns):
             # if we will straighten afterwards, cs will be altered in-place
             # with the redetermined gains. gs is the vertically-summed
             # result, which is ignored if straightening is done.
+            #
+            # If we have pre-loaded gain values (regain_data) we skip this step.
 
-            if regain_apply.value:
+            if regain_apply.value and len(regain_data) == 0:
                 try:
-                    gs = process_regain(cs, all_stth, regain_data, pre_ignore, fn,
-                                        reapply = vig_straighten.value)
+                    gs = process_regain(cs, all_stth, fn, reapply = vig_straighten.value)
                     print 'Have new gains at %f' % (time.clock() - elapsed)
                 except ValueError as e:
                     open_error(str(e))
